@@ -1,0 +1,17 @@
+﻿  Memory Scanner.cpp
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(17,12): error C2143: syntax error: missing ';' before '*'
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(17,12): error C4430: missing type specifier - int assumed. Note: C++ does not support default-int
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(17,17): error C2238: unexpected token(s) preceding ';'
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(58,53): error C3861: 'getLastErrorStr': identifier not found
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(71,59): error C3861: 'getLastErrorStr': identifier not found
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(72,17): error C2561: 'startScan': function must return a value
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(50): message : see declaration of 'startScan'
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(74,23): error C2039: 'next': is not a member of '_MEMORYBLOCK'
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(11): message : see declaration of '_MEMORYBLOCK'
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(91,33): error C2039: 'next': is not a member of '_MEMORYBLOCK'
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(11): message : see declaration of '_MEMORYBLOCK'
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(101,16): warning C4477: 'printf' : format string '%08x' requires an argument of type 'unsigned int', but variadic argument 1 has type 'PVOID'
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(102,18): error C2039: 'next': is not a member of '_MEMORYBLOCK'
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(11): message : see declaration of '_MEMORYBLOCK'
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(125,9): error C2561: 'main': function must return a value
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(120): message : see declaration of 'main'

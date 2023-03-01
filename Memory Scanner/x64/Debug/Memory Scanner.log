@@ -1,0 +1,6 @@
+﻿  Memory Scanner.cpp
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(33,27): warning C4244: '=': conversion from 'SIZE_T' to 'int', possible loss of data
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(121,16): warning C4477: 'printf' : format string '%8llu' requires an argument of type 'unsigned __int64', but variadic argument 1 has type 'unsigned long'
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(121,16): message : consider using '%lu' in the format string
+C:\Users\Argentix\source\repos\Memory Scanner\Memory Scanner\Memory Scanner.cpp(140): warning C4172: returning address of local variable or temporary: buf
+  Memory Scanner.vcxproj -> C:\Users\Argentix\source\repos\Memory Scanner\x64\Debug\memscan.exe
