@@ -12,7 +12,7 @@ bool writable_only = false;
 
 // set with the argument "-debug". debug currently will print skipped memory and every virtualQuery.
 bool debug = false;
-
+int memblock_counter = 0;
 
 //structs
 
@@ -21,14 +21,24 @@ bool debug = false;
 // the blocks are enumerated using VirtualQueryEx and the MEMORY_BASIC_INFORMATION of each region is saved in the block
 typedef struct _MEMORYBLOCK
 {
+    int id;
     HANDLE hProc;
     PVOID addr;
     int size;
     PVOID buffer;
     MEMORY_BASIC_INFORMATION mbi;
-    struct _MEMORYBLOCK *next;
+    struct _MEMORYBLOCK* next;
 } MBLOCK;
 
+enum HUNTING_TYPE
+{
+    type_byte,
+    type_char,
+    type_int,
+    type_float,
+    type_double,
+    type_long_int
+};
 
 // Prototypes
 wchar_t* getLastErrorStr();
@@ -40,6 +50,7 @@ void printScan(MBLOCK*);
 void closeScan(MBLOCK*);
 MBLOCK* startScan(int pid);
 void freeMemBlock(MBLOCK*);
+void printBuffer(MBLOCK* mb);
 
 
 // Convert MEMORY_BASIC_INFORMATION.Protect into comfy string representation.
@@ -112,17 +123,83 @@ char* getStringState(DWORD state)
 // Return a pointer to a newly allocated memblock
 MBLOCK* createMemBlock(HANDLE hProc, MEMORY_BASIC_INFORMATION meminfo)
 {
-    MBLOCK *mb =(MBLOCK *) malloc(sizeof(MBLOCK));
+    MBLOCK* mb = (MBLOCK*)malloc(sizeof(MBLOCK));
     if (mb) {
+        ++memblock_counter;
+        mb->id = memblock_counter;
         mb->addr = meminfo.BaseAddress;
         mb->hProc = hProc;
         mb->size = meminfo.RegionSize;
         mb->buffer = malloc(meminfo.RegionSize);
         // actually insert data to the buffer
         mb->mbi = meminfo;
+
+        // insert region data into memblock's buffer
+        if (!ReadProcessMemory(hProc, meminfo.BaseAddress, mb->buffer, meminfo.RegionSize, NULL)) {
+            printf("Error ReadProcessMemory: %d\n%ws\n", GetLastError(), getLastErrorStr());
+        }
     }
 
     return mb;
+}
+
+void printMemblock(int memblock_id, MBLOCK* memlist)
+{
+    printf("Printing memory block: %d\n", memblock_id);
+    BYTE membyte;
+    MBLOCK* mb = memlist;
+
+    while (mb) {
+        if (mb->id == memblock_id)
+            printBuffer(mb);
+        mb = mb->next;
+    }
+
+    return;
+}
+
+void printBufferAll(MBLOCK* memlist, const WCHAR patttern[])
+{
+    printf("searching through all buffers:\n");
+    MBLOCK* mb = memlist;
+    while (mb) {
+        long long int membyte = (long long int) mb->buffer;
+        long long int finalAddr = ((long long int)mb->buffer) + mb->size;
+        while (membyte <= finalAddr) {
+            if (*(WCHAR*)membyte == patttern[0]) {
+                if (*((WCHAR*)membyte + 1) == patttern[1]) {
+                    if (*((WCHAR*)membyte + 2) == patttern[2]) {
+                        if (*((WCHAR*)membyte + 3) == patttern[3]) {
+                            printf("Memblock id: %d\n", mb->id);
+                            printf("Memblock address: 0x%llx\n", membyte);
+                            printf("content: %d\n", *(int*)membyte);
+                        }
+                    }
+                }
+            }
+            //printf("%02x ", *(BYTE *)membyte);
+            membyte += sizeof(int);
+        }
+
+        mb = mb->next;
+    }
+
+    return;
+}
+
+void printBuffer(MBLOCK* mb)
+{
+    printf("Memblock id: %d\nBuffer:\n", mb->id);
+    long long int membyte = (long long int) mb->buffer;
+    long long int finalAddr = ((long long int)mb->buffer) + mb->size;
+    while (membyte <= finalAddr) {
+        if (*(BYTE*)membyte == 41)
+            printf("0x%02x ", (BYTE*)membyte);
+        //printf("%02x ", *(BYTE *)membyte);
+        ++membyte;
+    }
+
+    return;
 }
 
 // free blocks that fail the 'next scan' filter or all of them when a scan is discarded.
@@ -141,7 +218,7 @@ void freeMemBlock(MBLOCK* mb)
 // returns memlist - first member of the linked-list of memblocks created in the scan.
 MBLOCK* startScan(int pid)
 {
-    MBLOCK *memlist = NULL;
+    MBLOCK* memlist = NULL;
     MEMORY_BASIC_INFORMATION mbi;
     PVOID addr = 0;
 
@@ -154,7 +231,7 @@ MBLOCK* startScan(int pid)
     do {
         // query a memory region and 
         VirtualQueryEx(hProc, addr, &mbi, sizeof(mbi));
-         if (debug)
+        if (debug)
             printf("VirtualQuery: %p\n", addr);
 
         // skip if memory not commited or writable flag set and memory isnt writable
@@ -176,18 +253,18 @@ MBLOCK* startScan(int pid)
                     printf("Skipping uncommited memory: %p\n", addr);
                 if (!mem_writable)
                     printf("Skipping unwritable memory: %p\n", addr);
-           }
+            }
         }
 
         // move on to the next region
-        addr = (BYTE *)(mbi.BaseAddress) + mbi.RegionSize;
+        addr = (BYTE*)(mbi.BaseAddress) + mbi.RegionSize;
     } while (VirtualQueryEx(hProc, addr, &mbi, sizeof(mbi)));
 
     return memlist;
 }
 
 // free all memblocks in a memlist 
-void closeScan(MBLOCK *memlist)
+void closeScan(MBLOCK* memlist)
 {
     do {
         CloseHandle(memlist->hProc);
@@ -207,7 +284,8 @@ void printScan(MBLOCK* memlist)
         unsigned long int size_kb = mb->size >> 10;
         PVOID addr = mb->addr;
         const char* mem_state = getStringState(mb->mbi.State);
-        const char *mem_protect = getStringProtection(mb->mbi.Protect);
+        const char* mem_protect = getStringProtection(mb->mbi.Protect);
+        printf("ID: %d\t", mb->id); // memblock id
         printf("0x%p\t", addr); // address
         printf("%8lu KB\t", size_kb); // size
         printf("%s\t", mem_state);  // commit state
@@ -219,7 +297,7 @@ void printScan(MBLOCK* memlist)
 }
 
 // This one is insanely good...
-WCHAR * getLastErrorStr() 
+WCHAR* getLastErrorStr()
 {
     WCHAR buf[256];
     FormatMessageW(
@@ -238,12 +316,12 @@ int main(int argc, char** argv)
         return 1;
     }
     int pid = atoi(argv[1]);
-    if (argc >= 3) 
+    if (argc >= 3)
         writable_only = strcmp(argv[2], "-writable_mem") ? false : true;
     if (argc >= 4)
         debug = strcmp(argv[3], "-debug") ? false : true;
 
-        
+
     // scan game
     printf("Starting scan\n");
     MBLOCK* scanResults = startScan(pid);
@@ -253,6 +331,7 @@ int main(int argc, char** argv)
     }
 
     printScan(scanResults);
+    printBufferAll(scanResults, L"NAOR");
 
     return 0;
 }
