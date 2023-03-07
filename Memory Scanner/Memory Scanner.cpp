@@ -1,58 +1,31 @@
-// Memscan - A memory scanner
+//  Memscan - A memory scanner
+//  DONE:
+//      1. create structs and linked list and stuff to hold memory matches and metadata
+//      2. map memory protections and allocation state + parse memory regions into memblocks 
+//      3. core search logic
+//  TODO: 
+//      1. filtering aka 'next scan'.
+//      2. scans for other data types.
+//      3. hotkey to pause/resume target process
+//      4. extended information on modules and relative/static addresses and commit types.
+//      5. pointermaps!!
+//      6. tracing aka 'find what access/writes to this address'???
+//      7. bonus: generic speedhack (hook game ticks to fake time). ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
+
 #include <Windows.h>
 #include <stdio.h>
+#include "memscan.h"
 
-#define WRITEABLE_MEM (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
+// globals
 
-//flags
-
-// used to discard unwritable memory (not that we technically cant write to it but that its probably not a value in the game we care about changing)
+// flag used to discard unwritable memory (not that we technically cant write to it but that its probably not a value in the game we care about changing)
 // literal strings and resources may be here, code. might seperate this later to a choice of RO/RW/X etc.
-bool writable_only = false;
-
-// set with the argument "-debug". debug currently will print skipped memory and every virtualQuery.
-bool debug = false;
+bool writable_only;
+bool debug;
 int memblock_counter = 0;
+Node* matches = nullptr;
 
-//structs
-
-// A struct to hold memory blocks (memory regions with the same protection). 
-// A memory address will associate with a block in order to maintain metadata such as memory protections and module rva.
-// the blocks are enumerated using VirtualQueryEx and the MEMORY_BASIC_INFORMATION of each region is saved in the block
-typedef struct _MEMORYBLOCK
-{
-    int id;
-    HANDLE hProc;
-    PVOID addr;
-    int size;
-    PVOID buffer;
-    MEMORY_BASIC_INFORMATION mbi;
-    struct _MEMORYBLOCK* next;
-} MBLOCK;
-
-enum HUNTING_TYPE
-{
-    type_byte,
-    type_char,
-    type_int,
-    type_float,
-    type_double,
-    type_long_int
-};
-
-// Prototypes
-wchar_t* getLastErrorStr();
-char* getStringProtection(DWORD);
-MBLOCK* createMemBlock(HANDLE hProc, MEMORY_BASIC_INFORMATION mbi);
-char* getStringState(DWORD);
-WCHAR* getLastErrorStr();
-void printScan(MBLOCK*);
-void closeScan(MBLOCK*);
-MBLOCK* startScan(int pid);
-void freeMemBlock(MBLOCK*);
-void printBuffer(MBLOCK* mb);
-
-
+// add commit type (mapped/image/private)
 // Convert MEMORY_BASIC_INFORMATION.Protect into comfy string representation.
 // Return a pointer to a newly allocated string.
 char* getStringProtection(DWORD protection)
@@ -61,6 +34,7 @@ char* getStringProtection(DWORD protection)
     // https://learn.microsoft.com/en-us/windows/win32/memory/memory-protection-constants
     char buf[30];
     char* protection_string = (char*)calloc(sizeof(char), sizeof(buf));
+    DWORD protection_extra;
     if (!protection) {
         strcpy_s(buf, "No query permission");
         strcpy_s(protection_string, sizeof(buf), buf);
@@ -68,6 +42,8 @@ char* getStringProtection(DWORD protection)
     }
 
     strcpy_s(buf, "Memory Permissions: ");
+    protection_extra = protection;
+    protection &= 0xff;
     if (protection == PAGE_EXECUTE) // 0x10
         strcat_s(buf, "X");
     else if (protection == PAGE_EXECUTE_READ) // 0x20
@@ -90,11 +66,11 @@ char* getStringProtection(DWORD protection)
         strcat_s(buf, "PAGE_TARGETS_NO_UPDATE");
 
     // Extra protections
-    if (protection == PAGE_GUARD) // 0x100
+    if (protection_extra & PAGE_GUARD) // 0x100
         strcat_s(buf, "+G");
-    else if (protection == PAGE_NOCACHE) //0x200
+    else if (protection_extra & PAGE_NOCACHE) //0x200
         strcat_s(buf, "+NOCACHE");
-    else if (protection == PAGE_WRITECOMBINE) // 0x400
+    else if (protection_extra & PAGE_WRITECOMBINE) // 0x400
         strcat_s(buf, "+WRITECOMBINE");
 
     strcpy_s(protection_string, sizeof(buf), buf);
@@ -158,33 +134,49 @@ void printMemblock(int memblock_id, MBLOCK* memlist)
     return;
 }
 
-void printBufferAll(MBLOCK* memlist, const WCHAR patttern[])
+void searchWideChar(MBLOCK* memlist, const WCHAR pattern[], int pattern_len, Node* matches)
 {
-    printf("searching through all buffers:\n");
+    printf("searching for pattern: %ws\n", pattern);
     MBLOCK* mb = memlist;
     while (mb) {
         long long int membyte = (long long int) mb->buffer;
         long long int finalAddr = ((long long int)mb->buffer) + mb->size;
         while (membyte <= finalAddr) {
-            if (*(WCHAR*)membyte == patttern[0]) {
-                if (*((WCHAR*)membyte + 1) == patttern[1]) {
-                    if (*((WCHAR*)membyte + 2) == patttern[2]) {
-                        if (*((WCHAR*)membyte + 3) == patttern[3]) {
-                            printf("Memblock id: %d\n", mb->id);
-                            printf("Memblock address: 0x%llx\n", membyte);
-                            printf("content: %d\n", *(int*)membyte);
-                        }
-                    }
-                }
+            if (matchPatternWideChar(membyte, pattern, pattern_len)) {
+                printf("Memblock id: %d\n", mb->id);
+                printf("Memblock address: 0x%llx\n", membyte);
+                printf("content: %ws\n", (WCHAR *) membyte);
+
+                MATCH* newMatch = (MATCH *) malloc(sizeof(MATCH));
+                long long int offset = membyte - (long long int) (mb->buffer);
+                long long int remote_address = (long long int) mb->addr + offset;
+                newMatch->address = (PVOID) remote_address;
+                newMatch->memblock_id = mb->id;
+                newMatch->memblock = mb;
+                insertMatch(newMatch);
             }
-            //printf("%02x ", *(BYTE *)membyte);
-            membyte += sizeof(int);
+
+            ++membyte;
         }
 
         mb = mb->next;
     }
 
     return;
+}
+
+bool matchPatternWideChar(long long int addr, const WCHAR pattern[], int pattern_len)
+{
+    int matching = 0;
+    --pattern_len;
+    for (int i = 0; i <= pattern_len; ++i) {
+        if (!(*((WCHAR*)addr + i) == pattern[i]))
+            return false;
+        else
+            matching++;
+    }
+
+    return true;
 }
 
 void printBuffer(MBLOCK* mb)
@@ -308,18 +300,29 @@ WCHAR* getLastErrorStr()
 
     return buf;
 }
+
 int main(int argc, char** argv)
 {
     // argument check
-    if (argc < 2) {
-        printf("Usage: memscan.exe <pid> [-writable_mem] [-debug]\n");
-        return 1;
+    if (argc < 2) 
+        printUsageAndExit();
+
+    writable_only = false;
+    debug = false;
+    int pid = 0;
+    for (int i = 1; i < argc; ++i) {
+        if (!strcmp(argv[i], "-pid")) {
+            pid = atoi(argv[i+1]);
+            ++i;
+        }
+        else if (!strcmp(argv[i], "-writable_mem"))
+            writable_only = true;
+        else if(!strcmp(argv[i], "-debug"))
+            debug = true;
     }
-    int pid = atoi(argv[1]);
-    if (argc >= 3)
-        writable_only = strcmp(argv[2], "-writable_mem") ? false : true;
-    if (argc >= 4)
-        debug = strcmp(argv[3], "-debug") ? false : true;
+
+    if (pid == 0)
+        printUsageAndExit();
 
 
     // scan game
@@ -331,7 +334,73 @@ int main(int argc, char** argv)
     }
 
     printScan(scanResults);
-    printBufferAll(scanResults, L"NAOR");
+
+    // Test 1: Open notepad (or any application using text) and type a long enough text to search
+    
+    // Define search_pattern and length accordingly
+    const WCHAR *search_pattern = L"HOSHEA";
+    int pattern_len = 6;
+    searchWideChar(scanResults, search_pattern, pattern_len, matches);
+
+    // Change the text then press any key to continue (on memscan console) and notice the changed value
+    system("pause");
+    printf("Matches for pattern: %ws\n", search_pattern);
+    printMatchesWideChar(pattern_len);
+
+    // Test 2: Open calculator (or any application using numbers, specifically integers) and input a unique long 32bit integer
+    // Define search_pattern as the integer and length to 1
+    // (Implement searchSignedInt() and filterMatches()...)
+    // Make the value change (add something and press =) and use filterMatches() accordingly
+    // Repeat untill you notice the changes value
 
     return 0;
 }
+
+void printUsageAndExit()
+{
+    printf("Usage: memscan.exe <-pid PID> [-writable_mem] [-debug]\n");
+    printf("Example: memscan.exe -pid 1785 -writable_mem -debug\n");
+    exit(1);
+}
+
+Node* insertMatch(MATCH* newMatch) {
+    Node* head = matches;
+    Node* newNode = new Node;
+    newNode->match = newMatch;
+    newNode->next = nullptr;
+
+    if (head == nullptr || newMatch->address < head->match->address) {
+        newNode->next = head;
+        head = newNode;
+        matches = head;
+        return head;
+    }
+
+    Node* curr = head;
+    while (curr->next != nullptr && curr->next->match->address < newMatch->address) {
+        curr = curr->next;
+    }
+
+    newNode->next = curr->next;
+    curr->next = newNode;
+    matches = head;
+    return head;
+}
+
+void printMatchesWideChar(int length) {
+    Node* head = matches;
+    Node* curr = head;
+    int size = length * sizeof(WCHAR) + 1; // 16bit wide chars + null terminator
+    WCHAR* remote_value = (WCHAR*)malloc(size * sizeof(WCHAR));
+
+    while (curr != nullptr) {
+        MATCH* match = curr->match;
+        if (!ReadProcessMemory(match->memblock->hProc, match->address, remote_value, size, NULL)) {
+            printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+        }
+        printf("\nMemblock ID: %d Address: 0x%llx Value: %ls\n", match->memblock_id, match->address, remote_value);
+
+        curr = curr->next;
+    }
+}
+
