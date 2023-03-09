@@ -471,26 +471,18 @@ int main(int argc, char** argv)
     //printf("Matches for pattern: %ws\n", search_pattern);
     //printMatchesWideChar(pattern_len);
 
-    // test 1.5
-    int dataType = type_int;
-    int data_len = 1;
-    int value = 10;
-    filterAddresses(scanResults, value, dataType, data_len, matches);
-    printMatches(type_int);
-    system("pause");
 
-    dataType = type_double;
-    value = 13.2;
-    freeMatches();
-    filterAddresses(scanResults, value, dataType, data_len, matches);
-    printMatches(type_double);
-    system("pause");
-
-    // Test 2: Open calculator (or any application using numbers, specifically integers) and input a unique long 32bit integer
+    // Test 2: Open a program that stores numbers (not as strings like calc), specifically integers) and input a unique long 32bit integer
     // Define search_pattern as the integer and length to 1
     // (Implement searchSignedInt() and filterMatches()...)
     // Make the value change (add something and press =) and use filterMatches() accordingly
     // Repeat untill you notice the changes value
+    int dataType = type_int;
+    int data_len = 1;
+    int value = 187562453;
+    filterAddresses(scanResults, value, dataType, data_len, matches);
+    printMatches(type_int);
+    system("pause");
 
     return 0;
 }
