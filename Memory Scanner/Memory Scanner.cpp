@@ -32,7 +32,7 @@ char* getStringProtection(DWORD protection)
 {
     // Constants defined as DWORD in winnt.h, more information can be found at:
     // https://learn.microsoft.com/en-us/windows/win32/memory/memory-protection-constants
-    char buf[30];
+    char buf[70];
     char* protection_string = (char*)calloc(sizeof(char), sizeof(buf));
     DWORD protection_extra;
     if (!protection) {
@@ -165,6 +165,129 @@ void searchWideChar(MBLOCK* memlist, const WCHAR pattern[], int pattern_len, Nod
     return;
 }
 
+void filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len, Node* matches)
+{
+    printf("searching for value:");
+    switch (dataType)
+    {
+    case type_byte:
+        printValue(dataType, (BYTE)value);
+        break;
+    case type_char:
+        printValue(dataType, (char)value);
+        break;
+    case type_float:
+        printValue(dataType, (float)value);
+        break;
+    case type_double:
+        printValue(dataType, (double)value);
+        break;
+    case type_short:
+        printValue(dataType, (short)value);
+        break;
+    case type_int:
+        printValue(dataType, (int)value);
+        break;
+    case type_long_int:
+        printValue(dataType, (long int)value);
+        break;
+    }
+    putchar('\n');
+
+    MBLOCK* mb = memlist;
+    long long int membyte = (long long int) mb->buffer;
+    long long int finalAddr = ((long long int)mb->buffer) + mb->size;
+    bool matched = 0;
+    while (membyte <= finalAddr) {
+        switch (dataType)
+        {
+            case type_byte:
+                matched = (*((BYTE*)membyte) == (BYTE) value); // 1 Byte unsigned
+                break;
+            case type_char:
+                matched = (*((char*)membyte) == (char) value); // 1 Byte signed
+                break;
+            case type_float:
+                matched = (*((float*)membyte) == (float) value); // 4 Byte floating point
+                break;
+            case type_double:
+                matched = (*((double*)membyte) == (double) value); // 8 Byte floating point
+                break;
+            case type_short:
+                matched = (*((short*)membyte) == (short) value); // 2 Byte signed
+                break;
+            case type_int:
+                matched = (*((int*)membyte) == (int) value); // 4 Byte signed
+                break;
+            case type_long_int:
+                matched = (*((long int*)membyte) == (long int) value); // 8 Byte signed
+                break;
+        }
+        if (matched) {
+            printf("Memblock id: %d\n", mb->id);
+            printf("Memblock address: 0x%llx\n", membyte);
+            printf("content: ");
+            const char* fmt = printValue(dataType, value);
+            putchar('\n');
+
+            MATCH* newMatch = (MATCH*)malloc(sizeof(MATCH));
+            long long int offset = membyte - (long long int) (mb->buffer);
+            long long int remote_address = (long long int) mb->addr + offset;
+            newMatch->address = (PVOID)remote_address;
+            newMatch->memblock_id = mb->id;
+            newMatch->memblock = mb;
+            insertMatch(newMatch);
+        }
+
+        ++membyte;
+    }
+
+    return;
+}
+
+bool matchValue(long long int addr, int value, int pattern_len)
+{
+    int matching = 0;
+    --pattern_len;
+    for (int i = 0; i <= pattern_len; ++i) {
+        if (!(*((int*)addr + i) == value))
+            return false;
+        else
+            matching++;
+    }
+
+    return true;
+}
+
+const char* printValue(int dataType, double value)
+{
+    switch (dataType)
+    {
+    case type_byte:
+        printf("%02x", (BYTE) value);
+        break;
+    case type_char:    
+        printf("%c", (char) value);
+        break;
+    case type_float:
+    case type_double:
+        printf("%f", (double)value);
+        break;
+    case type_short:
+        printf("%h", (short)value);
+        break;
+    case type_int:
+        printf("%d", (int)value);
+        break;
+    case type_long_int:
+        printf("%ld", (long int)value);
+        break;
+    }
+
+    return "";
+}
+
+// basically matches wide strings
 bool matchPatternWideChar(long long int addr, const WCHAR pattern[], int pattern_len)
 {
     int matching = 0;
@@ -179,6 +302,7 @@ bool matchPatternWideChar(long long int addr, const WCHAR pattern[], int pattern
     return true;
 }
 
+// print hexdump of a single memblock's buffer
 void printBuffer(MBLOCK* mb)
 {
     printf("Memblock id: %d\nBuffer:\n", mb->id);
@@ -338,14 +462,29 @@ int main(int argc, char** argv)
     // Test 1: Open notepad (or any application using text) and type a long enough text to search
     
     // Define search_pattern and length accordingly
-    const WCHAR *search_pattern = L"HOSHEA";
-    int pattern_len = 6;
-    searchWideChar(scanResults, search_pattern, pattern_len, matches);
-
+    //const WCHAR *search_pattern = L"HOSHEA";
+    //int pattern_len = 6;
+    //searchWideChar(scanResults, search_pattern, pattern_len, matches);
+    
     // Change the text then press any key to continue (on memscan console) and notice the changed value
+    //system("pause");
+    //printf("Matches for pattern: %ws\n", search_pattern);
+    //printMatchesWideChar(pattern_len);
+
+    // test 1.5
+    int dataType = type_int;
+    int data_len = 1;
+    int value = 10;
+    filterAddresses(scanResults, value, dataType, data_len, matches);
+    printMatches(type_int);
     system("pause");
-    printf("Matches for pattern: %ws\n", search_pattern);
-    printMatchesWideChar(pattern_len);
+
+    dataType = type_double;
+    value = 13.2;
+    freeMatches();
+    filterAddresses(scanResults, value, dataType, data_len, matches);
+    printMatches(type_double);
+    system("pause");
 
     // Test 2: Open calculator (or any application using numbers, specifically integers) and input a unique long 32bit integer
     // Define search_pattern as the integer and length to 1
@@ -387,6 +526,17 @@ Node* insertMatch(MATCH* newMatch) {
     return head;
 }
 
+void freeMatches() {
+    Node* curr = matches;
+    while (curr != nullptr) {
+        Node* next = curr->next;
+        free(curr->match);
+        free(curr);
+        curr = next;
+    }
+    matches = nullptr;
+}
+
 void printMatchesWideChar(int length) {
     Node* head = matches;
     Node* curr = head;
@@ -404,3 +554,90 @@ void printMatchesWideChar(int length) {
     }
 }
 
+void printMatches(int dataType)
+{
+    switch (dataType)
+    {
+    case type_byte:
+        printf("not implemented");
+        break;
+    case type_char:
+        printf("not implemented");
+        break;
+    case type_float:
+        printf("not implemented");
+        break;
+    case type_double:
+        printMatchesDouble();
+        break;
+    case type_short:
+        printf("not implemented");
+        break;
+    case type_int:
+        printMatchesInt();
+        break;
+    case type_long_int:
+        printf("not implemented");
+        break;
+    }
+
+    return;
+}
+
+void printMatchesInt() 
+{
+    Node* head = matches;
+    Node* curr = head;
+    int size = sizeof(int);
+    int remote_value;
+
+    while (curr != nullptr) {
+        MATCH* match = curr->match;
+        if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
+            printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+        }
+        printf("\nMemblock ID: %d Address: 0x%llx Value: %d\n", match->memblock_id, match->address, remote_value);
+
+        curr = curr->next;
+    }
+}
+
+void printMatchesDouble()
+{
+    Node* head = matches;
+    Node* curr = head;
+    double size = sizeof(double);
+    double remote_value;
+
+    while (curr != nullptr) {
+        MATCH* match = curr->match;
+        if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
+            printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+        }
+        printf("\nMemblock ID: %d Address: 0x%llx Value: %f\n", match->memblock_id, match->address, remote_value);
+
+        curr = curr->next;
+    }
+}
+
+
+int getSizeForType(int dataType)
+{
+    switch (dataType)
+    {
+        case type_byte:
+            return 1;
+        case type_char:
+            return 1; 
+        case type_float:
+            return 4;
+        case type_double:
+            return 8;
+        case type_short:
+            return 2;
+        case type_int:
+            return 4;
+        case type_long_int:
+            return 8;
+    }
+}

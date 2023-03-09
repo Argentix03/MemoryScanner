@@ -34,11 +34,25 @@ struct Node {
 enum HUNTING_TYPE {
     type_byte,
     type_char,
+    type_short,
     type_int,
     type_float,
     type_double,
     type_long_int
 };
+
+// number of bytes for offset and pointer calculations
+enum DATASIZE {
+    size_type_byte = 1,
+    size_type_char = 1,
+    size_type_short = 2,
+    size_type_wchar = 2,
+    size_type_int = 4,
+    size_type_float = 4,
+    size_type_double = 8,
+    size_type_long_int = 8
+};
+
 
 // Prototypes
 wchar_t* getLastErrorStr();
@@ -55,3 +69,10 @@ void printUsageAndExit();
 bool matchPatternWideChar(long long int addr, const WCHAR pattern[], int pattern_len);
 Node* insertMatch(MATCH* newMatch);
 void printMatchesWideChar(int length);
+void filterAddresses(MBLOCK* scanResults, double value, int dataType, int data_len, Node* matches);
+const char* printValue(int dataType, double value);
+int getSizeForType(int dataType);
+void printMatches(int dataType);
+void printMatchesInt();
+void printMatchesDouble();
+void freeMatches();
