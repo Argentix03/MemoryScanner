@@ -3,14 +3,14 @@
 //      1. create structs and linked list and stuff to hold memory matches and metadata
 //      2. map memory protections and allocation state + parse memory regions into memblocks 
 //      3. core search logic
+//      4. filtering aka 'next scan'.
 //  TODO: 
-//      1. filtering aka 'next scan'.
-//      2. scans for other data types.
-//      3. hotkey to pause/resume target process
-//      4. extended information on modules and relative/static addresses and commit types.
-//      5. pointermaps!!
-//      6. tracing aka 'find what access/writes to this address'???
-//      7. bonus: generic speedhack (hook game ticks to fake time). ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
+//      5. scans for other data types.
+//      6. hotkey to pause/resume target process
+//      7. extended information on modules and relative/static addresses and commit types.
+//      8. pointermaps!!
+//      9. tracing aka 'find what access/writes to this address'???
+//      10. bonus: generic speedhack (hook game ticks to fake time). ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
 
 #include <Windows.h>
 #include <stdio.h>
@@ -23,7 +23,6 @@
 bool writable_only;
 bool debug;
 int memblock_counter = 0;
-Node* matches = nullptr;
 
 // add commit type (mapped/image/private)
 // Convert MEMORY_BASIC_INFORMATION.Protect into comfy string representation.
@@ -153,7 +152,7 @@ void searchWideChar(MBLOCK* memlist, const WCHAR pattern[], int pattern_len, Nod
                 newMatch->address = (PVOID) remote_address;
                 newMatch->memblock_id = mb->id;
                 newMatch->memblock = mb;
-                insertMatch(newMatch);
+                insertMatch(newMatch, matches);
             }
 
             ++membyte;
@@ -165,9 +164,15 @@ void searchWideChar(MBLOCK* memlist, const WCHAR pattern[], int pattern_len, Nod
     return;
 }
 
-void filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len, Node* matches)
+Node* filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len, Node* matches)
 {
-    printf("searching for value:");
+    bool matched = 0;
+
+    if (memlist)
+        printf("searching for value:");
+    else
+        printf("filtering matches for value:");
+
     switch (dataType)
     {
     case type_byte:
@@ -194,55 +199,108 @@ void filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len, 
     }
     putchar('\n');
 
-    MBLOCK* mb = memlist;
-    long long int membyte = (long long int) mb->buffer;
-    long long int finalAddr = ((long long int)mb->buffer) + mb->size;
-    bool matched = 0;
-    while (membyte <= finalAddr) {
-        switch (dataType)
-        {
+    // filter on given matches
+    if (!memlist) {
+        Node* head = matches;
+        Node* curr = head;
+        Node* tmp;
+        int size = sizeof(int);
+        int remote_value;
+        while (curr != nullptr) {
+            MATCH* match = curr->match;
+            if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
+                printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+            }
+
+            switch (dataType)
+            {
+            // This would not work for float!
             case type_byte:
-                matched = (*((BYTE*)membyte) == (BYTE) value); // 1 Byte unsigned
+                matched = (BYTE)remote_value == (BYTE)value; // 1 Byte unsigned
                 break;
             case type_char:
-                matched = (*((char*)membyte) == (char) value); // 1 Byte signed
+                matched = (char)remote_value == (char)value; // 1 Byte signed
                 break;
             case type_float:
-                matched = (*((float*)membyte) == (float) value); // 4 Byte floating point
+                matched = (float)remote_value == (float)value; // 4 Byte floating point
                 break;
             case type_double:
-                matched = (*((double*)membyte) == (double) value); // 8 Byte floating point
+                matched = (double)remote_value == (double)value; // 8 Byte floating point
                 break;
             case type_short:
-                matched = (*((short*)membyte) == (short) value); // 2 Byte signed
+                matched = (short)remote_value == (short)value; // 2 Byte signed
                 break;
             case type_int:
-                matched = (*((int*)membyte) == (int) value); // 4 Byte signed
+                matched = (int)remote_value == (int)value; // 4 Byte signed
                 break;
             case type_long_int:
-                matched = (*((long int*)membyte) == (long int) value); // 8 Byte signed
+                matched = (long int)remote_value == (long int)value; // 8 Byte signed
                 break;
-        }
-        if (matched) {
-            printf("Memblock id: %d\n", mb->id);
-            printf("Memblock address: 0x%llx\n", membyte);
-            printf("content: ");
-            const char* fmt = printValue(dataType, value);
-            putchar('\n');
+            }
 
-            MATCH* newMatch = (MATCH*)malloc(sizeof(MATCH));
-            long long int offset = membyte - (long long int) (mb->buffer);
-            long long int remote_address = (long long int) mb->addr + offset;
-            newMatch->address = (PVOID)remote_address;
-            newMatch->memblock_id = mb->id;
-            newMatch->memblock = mb;
-            insertMatch(newMatch);
+            curr = curr->next;
+            if (!matched) {
+                matches = removeMatch(match, matches);
+            }
         }
+    }
+    // search all scan results and add to given matches
+    else {
+        MBLOCK* mb = memlist;
+        while (mb) {
+            long long int membyte = (long long int) mb->buffer;
+            long long int finalAddr = ((long long int)mb->buffer) + mb->size;
 
-        ++membyte;
+            while (membyte <= finalAddr) {
+                switch (dataType)
+                {
+                    // This would not work for float!
+                case type_byte:
+                    matched = (*((BYTE*)membyte) == (BYTE)value); // 1 Byte unsigned
+                    break;
+                case type_char:
+                    matched = (*((char*)membyte) == (char)value); // 1 Byte signed
+                    break;
+                case type_float:
+                    matched = (*((float*)membyte) == (float)value); // 4 Byte floating point
+                    break;
+                case type_double:
+                    matched = (*((double*)membyte) == (double)value); // 8 Byte floating point
+                    break;
+                case type_short:
+                    matched = (*((short*)membyte) == (short)value); // 2 Byte signed
+                    break;
+                case type_int:
+                    matched = (*((int*)membyte) == (int)value); // 4 Byte signed
+                    break;
+                case type_long_int:
+                    matched = (*((long int*)membyte) == (long int)value); // 8 Byte signed
+                    break;
+                }
+                if (matched) {
+                    printf("Memblock id: %d\n", mb->id);
+                    printf("Memblock address: 0x%llx\n", membyte);
+                    printf("content: ");
+                    const char* fmt = printValue(dataType, value);
+                    putchar('\n');
+
+                    MATCH* newMatch = (MATCH*)malloc(sizeof(MATCH));
+                    long long int offset = membyte - (long long int) (mb->buffer);
+                    long long int remote_address = (long long int) mb->addr + offset;
+                    newMatch->address = (PVOID)remote_address;
+                    newMatch->memblock_id = mb->id;
+                    newMatch->memblock = mb;
+                    matches = insertMatch(newMatch, matches);
+                }
+
+                ++membyte;
+            }
+
+            mb = mb->next;
+        }
     }
 
-    return;
+    return matches;
 }
 
 bool matchValue(long long int addr, int value, int pattern_len)
@@ -291,7 +349,6 @@ const char* printValue(int dataType, double value)
 bool matchPatternWideChar(long long int addr, const WCHAR pattern[], int pattern_len)
 {
     int matching = 0;
-    --pattern_len;
     for (int i = 0; i <= pattern_len; ++i) {
         if (!(*((WCHAR*)addr + i) == pattern[i]))
             return false;
@@ -459,29 +516,27 @@ int main(int argc, char** argv)
 
     printScan(scanResults);
 
-    // Test 1: Open notepad (or any application using text) and type a long enough text to search
     
-    // Define search_pattern and length accordingly
-    //const WCHAR *search_pattern = L"HOSHEA";
-    //int pattern_len = 6;
-    //searchWideChar(scanResults, search_pattern, pattern_len, matches);
-    
-    // Change the text then press any key to continue (on memscan console) and notice the changed value
-    //system("pause");
-    //printf("Matches for pattern: %ws\n", search_pattern);
-    //printMatchesWideChar(pattern_len);
-
-
     // Test 2: Open a program that stores numbers (not as strings like calc), specifically integers) and input a unique long 32bit integer
-    // Define search_pattern as the integer and length to 1
-    // (Implement searchSignedInt() and filterMatches()...)
-    // Make the value change (add something and press =) and use filterMatches() accordingly
+    // Make the value change and use filterAddresses() accordingly
     // Repeat untill you notice the changes value
+
+    Node* matches = nullptr;
     int dataType = type_int;
     int data_len = 1;
-    int value = 187562453;
-    filterAddresses(scanResults, value, dataType, data_len, matches);
-    printMatches(type_int);
+    int value = 13371;
+    matches = filterAddresses(scanResults, value, dataType, data_len, matches);
+    printMatches(type_int, matches);
+    system("pause");
+    
+    value = 76453;
+    filterAddresses(NULL, value, dataType, data_len, matches);
+    printMatches(type_int, matches);
+    system("pause");
+
+    value = 123456;
+    filterAddresses(NULL, value, dataType, data_len, matches);
+    printMatches(type_int, matches);
     system("pause");
 
     return 0;
@@ -494,7 +549,7 @@ void printUsageAndExit()
     exit(1);
 }
 
-Node* insertMatch(MATCH* newMatch) {
+Node* insertMatch(MATCH* newMatch, Node* matches) {
     Node* head = matches;
     Node* newNode = new Node;
     newNode->match = newMatch;
@@ -518,7 +573,30 @@ Node* insertMatch(MATCH* newMatch) {
     return head;
 }
 
-void freeMatches() {
+Node* removeMatch(MATCH* matchToRemove, Node* matches) {
+    Node* curr = matches;
+    Node* prev = nullptr;
+
+    while (curr != nullptr) {
+        if (curr->match == matchToRemove) {
+            if (prev == nullptr) { // matchToRemove is the head of the list
+                matches = curr->next;
+            }
+            else {
+                prev->next = curr->next;
+            }
+            free(curr->match);
+            free(curr);
+            return matches;
+        }
+        prev = curr;
+        curr = curr->next;
+    }
+
+    return matches; // matchToRemove not found
+}
+
+void freeMatches(Node* matches) {
     Node* curr = matches;
     while (curr != nullptr) {
         Node* next = curr->next;
@@ -529,7 +607,7 @@ void freeMatches() {
     matches = nullptr;
 }
 
-void printMatchesWideChar(int length) {
+void printMatchesWideChar(int length, Node* matches) {
     Node* head = matches;
     Node* curr = head;
     int size = length * sizeof(WCHAR) + 1; // 16bit wide chars + null terminator
@@ -546,7 +624,7 @@ void printMatchesWideChar(int length) {
     }
 }
 
-void printMatches(int dataType)
+void printMatches(int dataType, Node* matches)
 {
     switch (dataType)
     {
@@ -560,13 +638,13 @@ void printMatches(int dataType)
         printf("not implemented");
         break;
     case type_double:
-        printMatchesDouble();
+        printMatchesDouble(matches);
         break;
     case type_short:
         printf("not implemented");
         break;
     case type_int:
-        printMatchesInt();
+        printMatchesInt(matches);
         break;
     case type_long_int:
         printf("not implemented");
@@ -576,7 +654,7 @@ void printMatches(int dataType)
     return;
 }
 
-void printMatchesInt() 
+void printMatchesInt(Node* matches)
 {
     Node* head = matches;
     Node* curr = head;
@@ -594,7 +672,7 @@ void printMatchesInt()
     }
 }
 
-void printMatchesDouble()
+void printMatchesDouble(Node* matches)
 {
     Node* head = matches;
     Node* curr = head;

@@ -5,6 +5,8 @@ VisualStudioVersion = 16.0.32901.82
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Memory Scanner", "Memory Scanner\Memory Scanner.vcxproj", "{22DB7008-3DB0-4088-8CA9-57EF79B00629}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Test", "Test\Test.vcxproj", "{260E2A67-660C-455E-9138-FA39569E861B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -21,6 +23,14 @@ Global
 		{22DB7008-3DB0-4088-8CA9-57EF79B00629}.Release|x64.Build.0 = Release|x64
 		{22DB7008-3DB0-4088-8CA9-57EF79B00629}.Release|x86.ActiveCfg = Release|Win32
 		{22DB7008-3DB0-4088-8CA9-57EF79B00629}.Release|x86.Build.0 = Release|Win32
+		{260E2A67-660C-455E-9138-FA39569E861B}.Debug|x64.ActiveCfg = Debug|x64
+		{260E2A67-660C-455E-9138-FA39569E861B}.Debug|x64.Build.0 = Debug|x64
+		{260E2A67-660C-455E-9138-FA39569E861B}.Debug|x86.ActiveCfg = Debug|Win32
+		{260E2A67-660C-455E-9138-FA39569E861B}.Debug|x86.Build.0 = Debug|Win32
+		{260E2A67-660C-455E-9138-FA39569E861B}.Release|x64.ActiveCfg = Release|x64
+		{260E2A67-660C-455E-9138-FA39569E861B}.Release|x64.Build.0 = Release|x64
+		{260E2A67-660C-455E-9138-FA39569E861B}.Release|x86.ActiveCfg = Release|Win32
+		{260E2A67-660C-455E-9138-FA39569E861B}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
