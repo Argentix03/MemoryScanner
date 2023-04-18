@@ -673,7 +673,7 @@ int countMatches(Node* matches)
     Node* match = matches;
     while (match) {
         counter++;
-        match->next;
+        match = match->next;
     }
 
     return counter;
@@ -686,10 +686,14 @@ void intScanUI(MBLOCK* scanData)
     char repeat;
     Node* matches = nullptr;
 
+    // find a way to DRY this...
     printf("Enter value: ");
     scanf_s("%d", &value);
     matches = filterAddresses(scanData, value, type_int, 1, matches);
-    printMatches(type_int, matches);
+    matchCount = countMatches(matches);
+    printf("Matches found: %d\n", matchCount);
+    if (matchCount <= 20)
+        printMatches(type_int, matches);
 
     printf("Next Filter? (y/n): ");
     scanf_s(" %c", &repeat);
@@ -698,10 +702,9 @@ void intScanUI(MBLOCK* scanData)
         scanf_s("%d", &value);
         matches = filterAddresses(NULL, value, type_int, 1, matches);
         matchCount = countMatches(matches);
+        printf("Matches found: %d\n", matchCount);
         if (matchCount <= 20)
             printMatches(type_int, matches);
-        else
-            printf("Matches found: %d\n", matchCount);
         printf("Filter more? (y/n): ");
         scanf_s(" %c", &repeat);
     }
