@@ -683,7 +683,6 @@ void filterResultsUI(MBLOCK* scanData)
             break;
         case 9:
             return;
-            break;
         default:
             printf("Invalid choice\n");
         }

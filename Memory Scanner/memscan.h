@@ -87,7 +87,7 @@ void filterResultsUI(MBLOCK* scanData);
 void intScanUI(MBLOCK* scanData);
 void byteScanUI(MBLOCK* scanData);
 void charScanUI(MBLOCK* scanData);
-void long_intScanUI(MBLOCK* scanData);
+void longIntScanUI(MBLOCK* scanData);
 void doubleScanUI(MBLOCK* scanData);
 void floatScanUI(MBLOCK* scanData);
 void wcharScanUI(MBLOCK* scanData);
