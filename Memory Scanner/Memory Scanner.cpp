@@ -638,6 +638,7 @@ void filterResultsUI(MBLOCK* scanData)
             "5: float (4 Byte floating point)\n"
             "6: double (8 Byte floating point)\n"
             "7: long int (8 Byte signed)\n"
+            "8: pointer (x64bit)\n"
         );
         scanf_s("%d", &userChoice);
 
@@ -660,6 +661,9 @@ void filterResultsUI(MBLOCK* scanData)
             printf(NOT_IMPLEMENTED); // floating comparisons not yet implemented (using == atm)
             break;
         case 7:
+            break;
+        case 8:
+            printf(NOT_IMPLEMENTED);
             break;
         default:
             printf("Invalid choice\n");
