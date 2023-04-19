@@ -40,7 +40,8 @@ enum HUNTING_TYPE {
     type_int,
     type_float,
     type_double,
-    type_long_int
+    type_long_long_int,
+    type_pointer
 };
 
 // number of bytes for offset and pointer calculations
@@ -52,7 +53,8 @@ enum DATASIZE {
     size_type_int = 4,
     size_type_float = 4,
     size_type_double = 8,
-    size_type_long_int = 8
+    size_type_long_long_int = 8,
+    size_type_pointer = 8
 };
 
 
@@ -90,3 +92,5 @@ void doubleScanUI(MBLOCK* scanData);
 void floatScanUI(MBLOCK* scanData);
 void wcharScanUI(MBLOCK* scanData);
 void shortScanUI(MBLOCK* scanData);
+void pointerScanUI(MBLOCK* scanData);
+void printMatchesPointer(Node* matches);

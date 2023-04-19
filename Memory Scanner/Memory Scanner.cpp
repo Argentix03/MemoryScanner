@@ -169,7 +169,7 @@ void searchWideChar(MBLOCK* memlist, const WCHAR pattern[], int pattern_len, Nod
 
 // Find matches for a value. filters through all memblock of a given memlist to fill in a given matches list. 
 // Sequential filters (indicated by a NULL memlist) filters a given matches list against target process memory.
-Node* filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len, Node* matches)
+Node* filterAddresses(MBLOCK* memlist, double value, HUNTING_TYPE dataType, int data_len, Node* matches)
 {
     bool matched = 0;
 
@@ -198,8 +198,11 @@ Node* filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len,
     case type_int:
         printValue(dataType, (int)value);
         break;
-    case type_long_int:
+    case type_long_long_int:
         printValue(dataType, (long int)value);
+        break;
+    case type_pointer:
+        printValue(dataType, (uintptr_t)value);
         break;
     }
     putchar('\n');
@@ -209,8 +212,8 @@ Node* filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len,
         Node* head = matches;
         Node* curr = head;
         Node* tmp;
-        int size = sizeof(int);
-        int remote_value;
+        int size = getSizeForType(dataType);
+        uintptr_t remote_value;
         while (curr != nullptr) {
             MATCH* match = curr->match;
             if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
@@ -220,6 +223,7 @@ Node* filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len,
 
             switch (dataType)
             {
+                // maybe can use memcmp() instead of casting to types?
             // This would not work for float!
             case type_byte:
                 matched = (BYTE)remote_value == (BYTE)value; // 1 Byte unsigned
@@ -239,8 +243,11 @@ Node* filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len,
             case type_int:
                 matched = (int)remote_value == (int)value; // 4 Byte signed
                 break;
-            case type_long_int:
-                matched = (long int)remote_value == (long int)value; // 8 Byte signed
+            case type_long_long_int:
+                matched = (long long int)remote_value == (long long int)value; // 8 Byte signed
+                break;
+            case type_pointer:
+                matched = (uintptr_t)remote_value == (uintptr_t)value; // 8 Byte signed
                 break;
             }
 
@@ -279,8 +286,11 @@ Node* filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len,
                 case type_int:
                     matched = (*((int*)membyte) == (int)value); // 4 Byte signed
                     break;
-                case type_long_int:
-                    matched = (*((long int*)membyte) == (long int)value); // 8 Byte signed
+                case type_long_long_int:
+                    matched = (*((long long int*)membyte) == (long long int)value); // 8 Byte signed
+                    break;
+                case type_pointer:
+                    matched = (*((uintptr_t*)membyte) == (uintptr_t)value); // 8 Byte signed
                     break;
                 }
                 if (matched) {
@@ -343,8 +353,11 @@ const char* printValue(int dataType, double value)
     case type_int:
         printf("%d", (int)value);
         break;
-    case type_long_int:
-        printf("%ld", (long int)value);
+    case type_long_long_int:
+        printf("%ld", (long long int)value);
+        break;
+    case type_pointer:
+        printf("0x%p", (unsigned long long int)value);
         break;
     }
 
@@ -663,6 +676,7 @@ void filterResultsUI(MBLOCK* scanData)
         case 7:
             break;
         case 8:
+            pointerScanUI(scanData);
             printf(NOT_IMPLEMENTED);
             break;
         default:
@@ -808,6 +822,28 @@ void longIntScanUI(MBLOCK* scanData)
     }
 }
 
+void pointerScanUI(MBLOCK* scanData)
+{
+    uintptr_t value;
+    char repeat;
+    Node* matches = nullptr;
+
+    printf("Enter value: ");
+    scanf_s("%llx", &value);
+    printf("Gotten value: 0x%llp\n", value);
+    matches = filterAddresses(scanData, value, type_pointer, 1, matches);
+    printMatches(type_pointer, matches);
+
+    printf("Next Filter? (y/n): ");
+    scanf_s(" %c", &repeat);
+    while (repeat == 'y') {
+        printf("Enter value: ");
+        scanf_s("%lx", &value);
+        matches = filterAddresses(NULL, value, type_byte, 1, matches);
+        printMatches(type_byte, matches);
+    }
+}
+
 // sorts by address. even though its mostly used in a sequential manner by a linear low to high memory region mapping so it comes sorted anyway.
 Node* insertMatch(MATCH* newMatch, Node* matches) {
     Node* head = matches;
@@ -906,12 +942,34 @@ void printMatches(int dataType, Node* matches)
     case type_int:
         printMatchesInt(matches);
         break;
-    case type_long_int:
+    case type_long_long_int:
         printf(NOT_IMPLEMENTED);
+        break;
+    case type_pointer:
+        printMatchesPointer(matches);
         break;
     }
 
     return;
+}
+
+void printMatchesPointer(Node* matches)
+{
+    Node* head = matches;
+    Node* curr = head;
+    int size = sizeof(uintptr_t);
+    uintptr_t remote_value;
+
+    while (curr != nullptr) {
+        MATCH* match = curr->match;
+        if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
+            if (!(GetLastError() == 299))
+                printf("Error reading updated value of match: %llp\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+        }
+        printf("\nMemblock ID: %d Address: 0x%llx Value: %llp\n", match->memblock_id, match->address, remote_value);
+
+        curr = curr->next;
+    }
 }
 
 void printMatchesInt(Node* matches)
@@ -925,7 +983,7 @@ void printMatchesInt(Node* matches)
         MATCH* match = curr->match;
         if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
             if (!(GetLastError() == 299))
-                printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+                printf("Error reading updated value of match: %llp\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
         printf("\nMemblock ID: %d Address: 0x%llx Value: %d\n", match->memblock_id, match->address, remote_value);
 
@@ -968,7 +1026,7 @@ int getSizeForType(int dataType)
             return 2;
         case type_int:
             return 4;
-        case type_long_int:
+        case type_long_long_int:
             return 8;
     }
 }
