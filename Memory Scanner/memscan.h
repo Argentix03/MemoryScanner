@@ -4,6 +4,8 @@
 // set of windows constants for memory protections indicating the memory is writable
 #define WRITEABLE_MEM (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
 
+#define NOT_IMPLEMENTED "Not yet implemented\n"
+
 // A struct to hold memory blocks (memory regions with the same protection). 
 // A memory address will associate with a block in order to maintain metadata such as memory protections and module rva.
 // the blocks are enumerated using VirtualQueryEx and the MEMORY_BASIC_INFORMATION of each region is saved in the block
@@ -77,3 +79,14 @@ void printMatchesInt(Node* matches);
 void printMatchesDouble(Node* matches);
 void freeMatches(Node* matches);
 Node* removeMatch(MATCH* match, Node* matches);
+void printMemblock(MBLOCK* mb, int print_memory);
+bool newScanUI();
+void filterResultsUI(MBLOCK* scanData);
+void intScanUI(MBLOCK* scanData);
+void byteScanUI(MBLOCK* scanData);
+void charScanUI(MBLOCK* scanData);
+void long_intScanUI(MBLOCK* scanData);
+void doubleScanUI(MBLOCK* scanData);
+void floatScanUI(MBLOCK* scanData);
+void wcharScanUI(MBLOCK* scanData);
+void shortScanUI(MBLOCK* scanData);

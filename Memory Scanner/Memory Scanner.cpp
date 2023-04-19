@@ -110,15 +110,18 @@ MBLOCK* createMemBlock(HANDLE hProc, MEMORY_BASIC_INFORMATION meminfo)
         mb->mbi = meminfo;
 
         // insert region data into memblock's buffer
-        if (!ReadProcessMemory(hProc, meminfo.BaseAddress, mb->buffer, meminfo.RegionSize, NULL)) {
-            printf("Error ReadProcessMemory: %d\n%ws\n", GetLastError(), getLastErrorStr());
+        SIZE_T bytesRead;
+        if (!ReadProcessMemory(hProc, meminfo.BaseAddress, mb->buffer, meminfo.RegionSize, &bytesRead)) {
+            if (GetLastError() != 299)
+                printf("Error ReadProcessMemory: %d\n%ls\n", GetLastError(), getLastErrorStr());
         }
     }
 
     return mb;
 }
 
-void printMemblock(int memblock_id, MBLOCK* memlist)
+
+void printMemblockBuffer(int memblock_id, MBLOCK* memlist)
 {
     printf("Printing memory block: %d\n", memblock_id);
     BYTE membyte;
@@ -164,6 +167,8 @@ void searchWideChar(MBLOCK* memlist, const WCHAR pattern[], int pattern_len, Nod
     return;
 }
 
+// Find matches for a value. filters through all memblock of a given memlist to fill in a given matches list. 
+// Sequential filters (indicated by a NULL memlist) filters a given matches list against target process memory.
 Node* filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len, Node* matches)
 {
     bool matched = 0;
@@ -209,7 +214,8 @@ Node* filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len,
         while (curr != nullptr) {
             MATCH* match = curr->match;
             if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
-                printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+                if (!(GetLastError() == 299))
+                    printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
             }
 
             switch (dataType)
@@ -278,11 +284,11 @@ Node* filterAddresses(MBLOCK* memlist, double value, int dataType, int data_len,
                     break;
                 }
                 if (matched) {
-                    printf("Memblock id: %d\n", mb->id);
-                    printf("Memblock address: 0x%llx\n", membyte);
-                    printf("content: ");
-                    const char* fmt = printValue(dataType, value);
-                    putchar('\n');
+                    //printf("Memblock id: %d\n", mb->id);
+                    //printf("Memblock address: 0x%llx\n", membyte);
+                    //printf("content: ");
+                    //const char* fmt = printValue(dataType, value);
+                    //putchar('\n');
 
                     MATCH* newMatch = (MATCH*)malloc(sizeof(MATCH));
                     long long int offset = membyte - (long long int) (mb->buffer);
@@ -366,17 +372,15 @@ void printBuffer(MBLOCK* mb)
     long long int membyte = (long long int) mb->buffer;
     long long int finalAddr = ((long long int)mb->buffer) + mb->size;
     while (membyte <= finalAddr) {
-        if (*(BYTE*)membyte == 41)
-            printf("0x%02x ", (BYTE*)membyte);
-        //printf("%02x ", *(BYTE *)membyte);
+        printf("%02x ", *(BYTE *)membyte);
         ++membyte;
     }
+    printf("\n");
 
     return;
 }
 
-// free blocks that fail the 'next scan' filter or all of them when a scan is discarded.
-// not implemented yet. need to free mb->buffer, mb, and not break the linked list.
+// free blocks.
 void freeMemBlock(MBLOCK* mb)
 {
     if (!mb)
@@ -394,6 +398,7 @@ MBLOCK* startScan(int pid)
     MBLOCK* memlist = NULL;
     MEMORY_BASIC_INFORMATION mbi;
     PVOID addr = 0;
+    memblock_counter = 0; // reset the memblock counter as no more than 1 scan at a time is supported for now
 
     HANDLE hProc = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, pid);
     if (!hProc) {
@@ -440,9 +445,10 @@ MBLOCK* startScan(int pid)
 void closeScan(MBLOCK* memlist)
 {
     do {
-        CloseHandle(memlist->hProc);
         MBLOCK* mb = memlist;
         freeMemBlock(mb);
+        if (!memlist->next)
+            CloseHandle(memlist->hProc);  // same handle for the whole memlist
     } while (memlist = memlist->next);
 
     return;
@@ -454,17 +460,27 @@ void printScan(MBLOCK* memlist)
     MBLOCK* mb = memlist;
 
     while (mb) {
-        unsigned long int size_kb = mb->size >> 10;
-        PVOID addr = mb->addr;
-        const char* mem_state = getStringState(mb->mbi.State);
-        const char* mem_protect = getStringProtection(mb->mbi.Protect);
-        printf("ID: %d\t", mb->id); // memblock id
-        printf("0x%p\t", addr); // address
-        printf("%8lu KB\t", size_kb); // size
-        printf("%s\t", mem_state);  // commit state
-        printf("%s\n", mem_protect);  // permissions
+        printMemblock(mb, FALSE);
         mb = mb->next;
     }
+
+    return;
+}
+
+void printMemblock(MBLOCK* mb, int print_memory)
+{
+    unsigned long int size_kb = mb->size >> 10;
+    PVOID addr = mb->addr;
+    const char* mem_state = getStringState(mb->mbi.State);
+    const char* mem_protect = getStringProtection(mb->mbi.Protect);
+    printf("ID: %d\t", mb->id); // memblock id
+    printf("0x%p\t", addr); // address
+    printf("%8lu KB\t", size_kb); // size
+    printf("%s\t", mem_state);  // commit state
+    printf("%s\n", mem_protect);  // permissions
+
+    if (print_memory)
+        printBuffer(mb);
 
     return;
 }
@@ -472,11 +488,11 @@ void printScan(MBLOCK* memlist)
 // This one is insanely good...
 WCHAR* getLastErrorStr()
 {
-    WCHAR buf[256];
+    WCHAR* buf = (WCHAR*) malloc(sizeof(WCHAR) * 256);
     FormatMessageW(
         FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
         NULL, GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        buf, (sizeof(buf) / sizeof(WCHAR)), NULL
+        buf, 256, NULL
     );
 
     return buf;
@@ -484,60 +500,58 @@ WCHAR* getLastErrorStr()
 
 int main(int argc, char** argv)
 {
-    // argument check
-    if (argc < 2) 
-        printUsageAndExit();
-
     writable_only = false;
     debug = false;
-    int pid = 0;
     for (int i = 1; i < argc; ++i) {
-        if (!strcmp(argv[i], "-pid")) {
-            pid = atoi(argv[i+1]);
-            ++i;
-        }
-        else if (!strcmp(argv[i], "-writable_mem"))
+        if (!strcmp(argv[i], "-writable_mem"))
             writable_only = true;
         else if(!strcmp(argv[i], "-debug"))
             debug = true;
     }
 
-    if (pid == 0)
-        printUsageAndExit();
+    // main UI loop
+    int userChoice;
+    while (true) {
+        printf(
+            "Enter your choice:\n"
+            "1: New Scan\n"
+            "2: Quit\n"
+        );
+        scanf_s("%d", &userChoice);
 
-
-    // scan game
-    printf("Starting scan\n");
-    MBLOCK* scanResults = startScan(pid);
-    if (!scanResults) {
-        printf("Scan failed\n");
-        return 1;
+        switch (userChoice)
+        {
+        case 1:
+        {
+            int result = newScanUI();
+            if (!result) {
+                printf("newScanUI return fail status. maybe run as admin\n");
+                continue; // back to loop
+            }
+            break;
+        }
+        case 2:
+            exit(0);
+        }
     }
 
-    printScan(scanResults);
+    //Node* matches = nullptr;
+    //int dataType = type_int;
+    //int data_len = 1;
+    //int value = 13371;
+    //matches = filterAddresses(scanData, value, dataType, data_len, matches);
+    //printMatches(type_int, matches);
+    //system("pause"); // make value change
+    //
+    //value = 76453;
+    //filterAddresses(NULL, value, dataType, data_len, matches);
+    //printMatches(type_int, matches);
+    //system("pause"); // make value change
 
-    
-    // Test 2: Open a program that stores numbers (not as strings like calc), specifically integers) and input a unique long 32bit integer
-    // Make the value change and use filterAddresses() accordingly
-    // Repeat untill you notice the changes value
-
-    Node* matches = nullptr;
-    int dataType = type_int;
-    int data_len = 1;
-    int value = 13371;
-    matches = filterAddresses(scanResults, value, dataType, data_len, matches);
-    printMatches(type_int, matches);
-    system("pause");
-    
-    value = 76453;
-    filterAddresses(NULL, value, dataType, data_len, matches);
-    printMatches(type_int, matches);
-    system("pause");
-
-    value = 123456;
-    filterAddresses(NULL, value, dataType, data_len, matches);
-    printMatches(type_int, matches);
-    system("pause");
+    //value = 123456;
+    //filterAddresses(NULL, value, dataType, data_len, matches);
+    //printMatches(type_int, matches);
+    //system("pause"); // make value change
 
     return 0;
 }
@@ -549,6 +563,252 @@ void printUsageAndExit()
     exit(1);
 }
 
+bool newScanUI()
+{
+    int pid;
+    printf("Enter PID: ");
+    scanf_s("%d", &pid);
+    printf("Starting scan\n");
+    MBLOCK* scanData = startScan(pid);
+    if (!scanData) {
+        // implement more logic here. eg. insufficient permission to get handle, tell user to run as admin etc.
+        printf("Scan failed\n");
+        return 0;
+    }
+
+    printScan(scanData);
+
+    int userChoice;
+    while (true) {
+        printf(
+            "Enter your choice:\n"
+            "1: Filter for addresses\n"
+            "2: Print scan data\n"
+            "3: Print scan data (debug)\n"
+            "4: Quit scan\n"
+        );
+        scanf_s("%d", &userChoice);
+
+        switch (userChoice)
+        {
+        case 1:
+            filterResultsUI(scanData);
+            break;
+        case 2:
+            printScan(scanData);
+            break;
+        case 3:
+        {
+            int memblock_id = 0;
+            do {
+                printf("Found %d memory blocks. Choose memory block to print (1-%d)\n", memblock_counter, memblock_counter);
+                scanf_s("%d", &memblock_id);
+            } while (!(userChoice <= memblock_counter && userChoice >= 1));
+
+            MBLOCK* mb = scanData;
+            while (mb) {
+                if (mb->id == memblock_id)
+                    printMemblock(mb, TRUE);
+                mb = mb->next;
+            }
+        }
+            break;
+        case 4:
+            closeScan(scanData);  
+            return 1; //back to main menu
+            break;
+        default:
+            printf("Invalid choice\n");
+        }
+    }
+}
+
+void filterResultsUI(MBLOCK* scanData)
+{
+    int userChoice;
+    HUNTING_TYPE dataType;
+
+    while (true) {
+        printf(
+            "Choose a data type:\n"
+            "1: byte (1 Byte signed)\n"
+            "2: char (1 Byte signed)\n"
+            "3: short (2 Byte signed)\n"
+            "4: int (4 Byte signed)\n"
+            "5: float (4 Byte floating point)\n"
+            "6: double (8 Byte floating point)\n"
+            "7: long int (8 Byte signed)\n"
+            "8: pointer (x64bit)\n"
+        );
+        scanf_s("%d", &userChoice);
+
+        switch (userChoice)
+        {
+        case 1:
+            byteScanUI(scanData);
+            return;
+        case 2:
+            printf(NOT_IMPLEMENTED);
+            break;
+        case 3:
+            printf(NOT_IMPLEMENTED);
+            break;
+        case 4:
+            intScanUI(scanData);
+            return;
+        case 5:
+        case 6:
+            printf(NOT_IMPLEMENTED); // floating comparisons not yet implemented (using == atm)
+            break;
+        case 7:
+            break;
+        case 8:
+            printf(NOT_IMPLEMENTED);
+            break;
+        default:
+            printf("Invalid choice\n");
+        }
+    }
+}
+
+int countMatches(Node* matches)
+{
+    int counter = 0;
+    Node* match = matches;
+    while (match) {
+        counter++;
+        match = match->next;
+    }
+
+    return counter;
+}
+
+void intScanUI(MBLOCK* scanData)
+{
+    int value;
+    int matchCount = 0;
+    char repeat;
+    Node* matches = nullptr;
+
+    // find a way to DRY this...
+    printf("Enter value: ");
+    scanf_s("%d", &value);
+    matches = filterAddresses(scanData, value, type_int, 1, matches);
+    matchCount = countMatches(matches);
+    printf("Matches found: %d\n", matchCount);
+    if (matchCount <= 20)
+        printMatches(type_int, matches);
+
+    printf("Next Filter? (y/n): ");
+    scanf_s(" %c", &repeat);
+    while (repeat == 'y') {
+        printf("Enter value: ");
+        scanf_s("%d", &value);
+        matches = filterAddresses(NULL, value, type_int, 1, matches);
+        matchCount = countMatches(matches);
+        printf("Matches found: %d\n", matchCount);
+        if (matchCount <= 20)
+            printMatches(type_int, matches);
+        printf("Filter more? (y/n): ");
+        scanf_s(" %c", &repeat);
+    }
+}
+
+void byteScanUI(MBLOCK* scanData)
+{
+    int value;
+    char repeat;
+    Node* matches = nullptr;
+
+    printf("Enter value: ");
+    scanf_s("%x", &value);
+    matches = filterAddresses(scanData, value, type_byte, 1, matches);
+    printMatches(type_byte, matches);
+
+    printf("Next Filter? (y/n): ");
+    scanf_s(" %c", &repeat);
+    while (repeat == 'y') {
+        printf("Enter value: ");
+        scanf_s("%x", &value);
+        matches = filterAddresses(NULL, value, type_byte, 1, matches);
+        printMatches(type_byte, matches);
+    }
+}
+
+void charScanUI(MBLOCK* scanData)
+{
+    int value;
+    char repeat;
+    Node* matches = nullptr;
+
+    printf("Enter value: ");
+    scanf_s("%x", &value);
+    matches = filterAddresses(scanData, value, type_byte, 1, matches);
+    printMatches(type_byte, matches);
+
+    printf("Next Filter? (y/n): ");
+    scanf_s(" %c", &repeat);
+    while (repeat == 'y') {
+        printf("Enter value: ");
+        scanf_s("%x", &value);
+        matches = filterAddresses(NULL, value, type_byte, 1, matches);
+        printMatches(type_byte, matches);
+    }
+}
+
+void shortScanUI(MBLOCK* scanData)
+{
+    int value;
+    char repeat;
+    Node* matches = nullptr;
+
+    printf("Enter value: ");
+    scanf_s("%x", &value);
+    matches = filterAddresses(scanData, value, type_byte, 1, matches);
+    printMatches(type_byte, matches);
+
+    printf("Next Filter? (y/n): ");
+    scanf_s(" %c", &repeat);
+    while (repeat == 'y') {
+        printf("Enter value: ");
+        scanf_s("%x", &value);
+        matches = filterAddresses(NULL, value, type_byte, 1, matches);
+        printMatches(type_byte, matches);
+    }
+}
+
+void floatScanUI(MBLOCK* scanData)
+{
+
+}
+
+void doubleScanUI(MBLOCK* scanData)
+{
+
+}
+
+void longIntScanUI(MBLOCK* scanData)
+{
+    int value;
+    char repeat;
+    Node* matches = nullptr;
+
+    printf("Enter value: ");
+    scanf_s("%x", &value);
+    matches = filterAddresses(scanData, value, type_byte, 1, matches);
+    printMatches(type_byte, matches);
+
+    printf("Next Filter? (y/n): ");
+    scanf_s(" %c", &repeat);
+    while (repeat == 'y') {
+        printf("Enter value: ");
+        scanf_s("%x", &value);
+        matches = filterAddresses(NULL, value, type_byte, 1, matches);
+        printMatches(type_byte, matches);
+    }
+}
+
+// sorts by address. even though its mostly used in a sequential manner by a linear low to high memory region mapping so it comes sorted anyway.
 Node* insertMatch(MATCH* newMatch, Node* matches) {
     Node* head = matches;
     Node* newNode = new Node;
@@ -629,25 +889,25 @@ void printMatches(int dataType, Node* matches)
     switch (dataType)
     {
     case type_byte:
-        printf("not implemented");
+        printf(NOT_IMPLEMENTED);
         break;
     case type_char:
-        printf("not implemented");
+        printf(NOT_IMPLEMENTED);
         break;
     case type_float:
-        printf("not implemented");
+        printf(NOT_IMPLEMENTED);
         break;
     case type_double:
         printMatchesDouble(matches);
         break;
     case type_short:
-        printf("not implemented");
+        printf(NOT_IMPLEMENTED);
         break;
     case type_int:
         printMatchesInt(matches);
         break;
     case type_long_int:
-        printf("not implemented");
+        printf(NOT_IMPLEMENTED);
         break;
     }
 
@@ -664,7 +924,8 @@ void printMatchesInt(Node* matches)
     while (curr != nullptr) {
         MATCH* match = curr->match;
         if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
-            printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+            if (!(GetLastError() == 299))
+                printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
         printf("\nMemblock ID: %d Address: 0x%llx Value: %d\n", match->memblock_id, match->address, remote_value);
 
