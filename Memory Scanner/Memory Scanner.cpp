@@ -4,13 +4,14 @@
 //      2. map memory protections and allocation state + parse memory regions into memblocks 
 //      3. core search logic
 //      4. filtering aka 'next scan'.
-//  TODO: 
 //      5. scans for other data types.
-//      6. hotkey to pause/resume target process
-//      7. extended information on modules and relative/static addresses and commit types.
-//      8. pointermaps!!
-//      9. tracing aka 'find what access/writes to this address'???
-//      10. bonus: generic speedhack (hook game ticks to fake time). ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
+//      6. save matches
+//  TODO: 
+//      7. hotkey to pause/resume target process
+//      8. extended information on modules and relative/static addresses and commit types.
+//      9. pointermaps!!
+//      10. tracing aka 'find what access/writes to this address'???
+//      11. bonus: generic speedhack (hook game ticks to fake time). ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
 
 #include <Windows.h>
 #include <stdio.h>
@@ -548,6 +549,7 @@ int main(int argc, char** argv)
         }
     }
 
+    //Basic usage:
     //Node* matches = nullptr;
     //int dataType = type_int;
     //int data_len = 1;
