@@ -6,17 +6,18 @@
 //      4. filtering aka 'next scan'.
 //      5. scans for other data types.
 //      6. save matches
-//  TODO: 
 //      7. hotkey to pause/resume target process
+//  TODO:
 //      8. extended information on modules and relative/static addresses and commit types.
 //      9. pointermaps!!
 //      10. tracing aka 'find what access/writes to this address'???
-//      11. bonus: generic speedhack (hook game ticks to fake time). ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
+//      11. bonus: generic speedhack (hook game ticks to fake time).                         ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
 
 #include <Windows.h>
 #include <stdio.h>
 #include "memscan.h"
 #include <conio.h>
+#include <winternl.h>
 
 // globals
 
@@ -25,6 +26,10 @@
 bool writable_only;
 bool debug;
 int memblock_counter = 0;
+int shortcut_counter = 0;
+HOTKEY* shortcuts[5];
+HANDLE hotkeysReadyEvent;
+CRITICAL_SECTION cs;
 
 // add commit type (mapped/image/private)
 // Convert MEMORY_BASIC_INFORMATION.Protect into comfy string representation.
@@ -415,7 +420,7 @@ MBLOCK* startScan(int pid)
     PVOID addr = 0;
     memblock_counter = 0; // reset the memblock counter as no more than 1 scan at a time is supported for now
 
-    HANDLE hProc = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, false, pid);
+    HANDLE hProc = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | PROCESS_SUSPEND_RESUME, false, pid);
     if (!hProc) {
         printf("Error open process handle: %d\n%ws\n", GetLastError(), getLastErrorStr());
         return nullptr;
@@ -524,6 +529,17 @@ int main(int argc, char** argv)
             debug = true;
     }
 
+    // listener and handler for shortcuts
+    InitializeCriticalSection(&cs);
+    HANDLE hThread = CreateThread(
+        NULL,               // default security attributes
+        0,                  // use default stack size  
+        shortcutHandler,    // thread function name
+        shortcuts,          // argument to thread function 
+        0,                  // use default creation flags
+        NULL
+    );                      
+
     // main UI loop
     int userChoice;
     while (true) {
@@ -558,6 +574,93 @@ void printUsageAndExit()
     printf("Usage: memscan.exe <-pid PID> [-writable_mem] [-debug]\n");
     printf("Example: memscan.exe -pid 1785 -writable_mem -debug\n");
     exit(1);
+}
+
+DWORD WINAPI shortcutHandler(LPVOID lpParam)
+{
+    MSG msg;
+    HOTKEY* shortcut;
+    bool toggle = true;
+    WaitForSingleObject(hotkeysReadyEvent, INFINITE);
+    while (true) {
+        // check if shortcuts needs setting/resetting
+        for (int i = 0; i < shortcut_counter; i++) {
+            if (shortcuts[i]->reset) {
+                EnterCriticalSection(&cs);
+                shortcut = shortcuts[i];
+                DWORD MODS = MOD_NOREPEAT;
+                if (shortcut->CTRL)
+                    MODS |= MOD_CONTROL;
+                if (shortcut->ALT)
+                    MODS |= MOD_ALT;
+                if (shortcut->SHIFT)
+                    MODS |= MOD_SHIFT;
+                HRESULT result = RegisterHotKey(NULL, i, MODS, shortcut->keyId);
+                shortcut->reset = false;
+                if(!result)
+                    printf("Error registering hotkey: %d\n%ws\n", GetLastError(), getLastErrorStr());
+                else
+                    printf("Registered hotkey %s %s %s %c (0x%02x)\n", 
+                        shortcut->CTRL ? "CTRL +" : "",
+                        shortcut->ALT ? "ALT +" : "",
+                        shortcut->SHIFT ? "SHIFT +" : "",
+                        shortcut->keyId,
+                        shortcut->keyId
+                    );
+                LeaveCriticalSection(&cs);
+            }      
+        }
+
+        // handle hotkey press
+        if (PeekMessage(&msg, NULL, 0, 0, 0)) {
+            if (msg.message == WM_HOTKEY) {
+                GetMessage(&msg, NULL, 0, 0);
+                shortcut = shortcuts[msg.wParam];
+                switch (shortcut->type)
+                {
+                case shortcut_suspend:
+                    suspendTarget(shortcut->hProc, toggle);
+                    toggle = !toggle;
+                    break;
+                case 2:
+                    break;
+                case 3:
+                    break;
+                case 4:
+                    break;
+                case 5:
+                    break;
+                }
+            }
+        }
+    }
+}
+
+bool suspendTarget(HANDLE hProc, bool toggle)
+{
+    // Import NtSuspendProcess/NtResumeProcess from ntdll.dll to suspend/resume all threads at once.
+    typedef LONG(NTAPI* pNtSuspendProcess)(HANDLE ProcessHandle);
+    typedef LONG(NTAPI* pNtResumeProcess)(HANDLE ProcessHandle);
+    pNtSuspendProcess NtSuspendProcess = (pNtSuspendProcess) GetProcAddress(GetModuleHandle(L"ntdll.dll"), "NtSuspendProcess");
+    pNtResumeProcess NtResumeProcess = (pNtResumeProcess) GetProcAddress(GetModuleHandle(L"ntdll.dll"), "NtResumeProcess");
+    if (NtSuspendProcess && NtResumeProcess) {
+        HRESULT result;
+        if (toggle)
+            result = NtSuspendProcess(hProc);
+        else
+            result = NtResumeProcess(hProc);
+
+        if (!NT_SUCCESS(result)) {
+            printf("Error suspend or resume process: %d\n%ws\n", GetLastError(), getLastErrorStr());
+            return false;
+        }
+    }
+    else {
+        printf("Error getting addresses for suspend/resume from ndtll: %d\n%ws\n", GetLastError(), getLastErrorStr());
+        return false;
+    }
+
+    return true;
 }
 
 bool newScanUI()
@@ -632,6 +735,7 @@ void configureHotkeyUI(MBLOCK* scanData)
     bool SHIFT = false;
     bool ALT = false;
     bool CTRL = false;
+    HOTKEY* shortcut;
     while (true) {
         printf(
             "Choose a shortcut to configure:\n"
@@ -669,7 +773,8 @@ void configureHotkeyUI(MBLOCK* scanData)
                             keyReady = true;
                         }
                         else if (keyId == VK_SHIFT) {
-                            printf("[SHIFT] + ");
+                            if(!SHIFT)
+                                printf("[SHIFT] + ");
                             SHIFT = true;
                             keyReady = false;
                         }
@@ -684,7 +789,8 @@ void configureHotkeyUI(MBLOCK* scanData)
                         //    keyReady = false;
                         //}
                         else if (keyId == VK_CONTROL) {
-                            printf("[CONTROL] + ");
+                            if (!CTRL)
+                                printf("[CONTROL] + ");
                             CTRL = true;
                             keyReady = false;
                         }
@@ -699,7 +805,8 @@ void configureHotkeyUI(MBLOCK* scanData)
                         //    keyReady = false;
                         //}
                         else if (keyId == VK_MENU) {
-                            printf("[ALT] + ");
+                            if (!ALT)
+                                printf("[ALT] + ");
                             ALT = true;
                             keyReady = false;
                         }
@@ -741,13 +848,13 @@ void configureHotkeyUI(MBLOCK* scanData)
                         }
                         else if (keyId != VK_LSHIFT && keyId != VK_RSHIFT && keyId != VK_LCONTROL && keyId != VK_RCONTROL && keyId != VK_LMENU && keyId != VK_RMENU) {
                             keyReady = true;
+                            printf("%c\n", keyId);
                             break;
                         }  
                     }
                 }
             }
-            configureHotkey(keyId, CTRL, ALT, SHIFT, scanData->hProc);
-
+            configureHotkey(keyId, CTRL, ALT, SHIFT, shortcut_suspend, scanData->hProc);
             return;
         case 2:
             return;
@@ -757,22 +864,25 @@ void configureHotkeyUI(MBLOCK* scanData)
     }
 }
 
-void configureHotkey(int keyId, bool CTRL, bool ALT, bool SHIFT, HANDLE)
+void configureHotkey(int keyId, bool CTRL, bool ALT, bool SHIFT, SHORTCUT_TYPE type, HANDLE hProc)
 {
-    unsigned int MODS = 0;
-    if (CTRL)
-        MODS |= MOD_CONTROL;
-    if (ALT)
-        MODS |= MOD_ALT;
-    if (SHIFT)
-        MODS |= MOD_SHIFT;
+    HOTKEY* shortcut = (HOTKEY*)malloc(sizeof(HOTKEY));
 
-    if (!RegisterHotKey(NULL, 1, MODS | MOD_NOREPEAT, keyId)) {
-        printf("Error registering hotkey: %d\n%ws\n", GetLastError(), getLastErrorStr());
-    }
-    else {
-        printf("Registered hotkey %s %s %s 0x%02x\n", CTRL ? "CTRL + " : "", ALT ? "ALT + " : "", SHIFT ? "SHIFT + " : "", keyId);
-    }
+    shortcut->hotkeyId = shortcut_counter;
+    shortcut->keyId = keyId;
+    shortcut->type = type;
+    shortcut->hProc = hProc;
+    shortcut->CTRL = CTRL ? true : false;
+    shortcut->ALT = ALT ? true : false;
+    shortcut->SHIFT = SHIFT ? true : false;
+
+    shortcut->reset = true; // make sure this one is last because my lazy code is not thread-safe (variable changed by other thread)
+    EnterCriticalSection(&cs);
+    shortcuts[shortcut_counter++] = shortcut;  // and this one kicks the check loop on in the other thread
+    LeaveCriticalSection(&cs);
+    Sleep(500);
+    SetEvent(hotkeysReadyEvent);  // and this one kicks the thread on first time
+    printf("Registered hotkey %s %s %s %c (0x%02x)\n", CTRL ? "CTRL + " : "", ALT ? "ALT + " : "", SHIFT ? "SHIFT + " : "", keyId, keyId);
 
     return;
 }

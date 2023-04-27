@@ -32,6 +32,24 @@ struct Node {
     Node* next;
 };
 
+// enum for various shortcuts
+enum SHORTCUT_TYPE {
+    shortcut_suspend
+};
+
+// hotkeys for shurtcut configurations
+typedef struct _HOTKEY {
+    int keyId;
+    bool CTRL;
+    bool ALT;
+    bool SHIFT;
+    int hotkeyId;
+    SHORTCUT_TYPE type;
+    HANDLE hProc;
+    bool reset;
+} HOTKEY;
+
+
 // enum for different data types for different types of pattern searches
 enum HUNTING_TYPE {
     type_byte,
@@ -99,4 +117,6 @@ void printMatchesChar(Node* matches);
 void printMatchesShort(Node* matches);
 void printMatchesLongLongInt(Node* matches);
 void configureHotkeyUI(MBLOCK* scanData);
-void configureHotkey(int keyId, bool CTRL, bool ALT, bool SHIFT, HANDLE);
+void configureHotkey(int keyId, bool CTRL, bool ALT, bool SHIFT, SHORTCUT_TYPE type, HANDLE hProc);
+bool suspendTarget(HANDLE hProc, bool toggle);
+DWORD WINAPI shortcutHandler(LPVOID lpParam);
