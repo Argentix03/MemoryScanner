@@ -16,6 +16,7 @@
 #include <Windows.h>
 #include <stdio.h>
 #include "memscan.h"
+#include <conio.h>
 
 // globals
 
@@ -549,25 +550,6 @@ int main(int argc, char** argv)
         }
     }
 
-    //Basic usage:
-    //Node* matches = nullptr;
-    //int dataType = type_int;
-    //int data_len = 1;
-    //int value = 13371;
-    //matches = filterAddresses(scanData, value, dataType, data_len, matches);
-    //printMatches(type_int, matches);
-    //system("pause"); // make value change
-    //
-    //value = 76453;
-    //filterAddresses(NULL, value, dataType, data_len, matches);
-    //printMatches(type_int, matches);
-    //system("pause"); // make value change
-
-    //value = 123456;
-    //filterAddresses(NULL, value, dataType, data_len, matches);
-    //printMatches(type_int, matches);
-    //system("pause"); // make value change
-
     return 0;
 }
 
@@ -600,7 +582,8 @@ bool newScanUI()
             "1: Filter for addresses\n"
             "2: Print scan data\n"
             "3: Print scan data (debug)\n"
-            "4: Quit scan\n"
+            "4: Configure shortcuts\n"
+            "5: Quit scan\n"
         );
         scanf_s("%d", &userChoice);
 
@@ -629,6 +612,9 @@ bool newScanUI()
         }
             break;
         case 4:
+            configureHotkeyUI(scanData);
+            break;
+        case 5:
             closeScan(scanData);  
             return 1; //back to main menu
             break;
@@ -636,6 +622,159 @@ bool newScanUI()
             printf("Invalid choice\n");
         }
     }
+}
+
+void configureHotkeyUI(MBLOCK* scanData)
+{
+    int keyId;
+    int userChoice;
+    bool keyReady;
+    bool SHIFT = false;
+    bool ALT = false;
+    bool CTRL = false;
+    while (true) {
+        printf(
+            "Choose a shortcut to configure:\n"
+            "1: Suspend target process\n"
+            "2: Go back\n"
+        );
+        scanf_s("%d", &userChoice);
+
+        switch (userChoice)
+        {
+        case 1:
+            printf("Enter a key: ");
+            Sleep(500);
+            keyReady = false;
+            while (!keyReady) {
+                for (keyId = 8; keyId <= 190; keyId++) {
+                    //printf("KeyId: %d 0x%02x\n", keyId);
+                    if (GetAsyncKeyState(keyId) & 0x8000) {
+                        if (keyId == 190 || keyId == 110)
+                            printf(".");
+                        else if (keyId == 8) {
+                            printf("[BACKSPACE]");
+                            keyReady = true;
+                        }
+                        else if (keyId == 13) {
+                            printf("[ENTER]");
+                            keyReady = true;
+                        }
+                        else if (keyId == 32) {
+                            printf("[SPACE]");
+                            keyReady = true;
+                        }
+                        else if (keyId == VK_TAB) {
+                            printf("[TAB]");
+                            keyReady = true;
+                        }
+                        else if (keyId == VK_SHIFT) {
+                            printf("[SHIFT] + ");
+                            SHIFT = true;
+                            keyReady = false;
+                        }
+                        //else if (keyId == VK_LSHIFT) {
+                        //    printf("[L SHIFT] + ");
+                        //    vk[vkLen++] = VK_LSHIFT;
+                        //    keyReady = false;
+                        //}
+                        //else if (keyId == VK_RSHIFT) {
+                        //    printf("[R SHIFT] + ");
+                        //    vk[vkLen++] = VK_RSHIFT;
+                        //    keyReady = false;
+                        //}
+                        else if (keyId == VK_CONTROL) {
+                            printf("[CONTROL] + ");
+                            CTRL = true;
+                            keyReady = false;
+                        }
+                        //else if (keyId == VK_LCONTROL) {
+                        //    printf("[L CONTROL] + ");
+                        //    vk[vkLen++] = VK_LCONTROL;
+                        //    keyReady = false;
+                        //}
+                        //else if (keyId == VK_RCONTROL) {
+                        //    printf("[R CONTROL] + ");
+                        //    vk[vkLen++] = VK_RCONTROL;
+                        //    keyReady = false;
+                        //}
+                        else if (keyId == VK_MENU) {
+                            printf("[ALT] + ");
+                            ALT = true;
+                            keyReady = false;
+                        }
+                        //else if (keyId == VK_LMENU) {
+                        //    printf("[L ALT] + ");
+                        //    keyReady = false;
+                        //}
+                        //else if (keyId == VK_RMENU) {
+                        //    printf("[R ALT] + ");
+                        //    keyReady = false;
+                        //}
+                        else if (keyId == VK_ESCAPE) {
+                            printf("[ESCAPE]");
+                            keyReady = true;
+                        }
+                        else if (keyId == VK_END) {
+                            printf("[END]");
+                            keyReady = true;
+                        }
+                        else if (keyId == VK_HOME) {
+                            printf("[HOME]");
+                            keyReady = true;
+                        }
+                        else if (keyId == VK_LEFT) {
+                            printf("[LEFT]");
+                            keyReady = true;
+                        }
+                        else if (keyId == VK_UP) {
+                            printf("[UP]");
+                            keyReady = true;
+                        }
+                        else if (keyId == VK_RIGHT) {
+                            printf("[RIGHT]");
+                            keyReady = true;
+                        }
+                        else if (keyId == VK_DOWN) {
+                            printf("[DOWN]");
+                            keyReady = true;
+                        }
+                        else if (keyId != VK_LSHIFT && keyId != VK_RSHIFT && keyId != VK_LCONTROL && keyId != VK_RCONTROL && keyId != VK_LMENU && keyId != VK_RMENU) {
+                            keyReady = true;
+                            break;
+                        }  
+                    }
+                }
+            }
+            configureHotkey(keyId, CTRL, ALT, SHIFT, scanData->hProc);
+
+            return;
+        case 2:
+            return;
+        default:
+            printf("Invalid choice\n");
+        }
+    }
+}
+
+void configureHotkey(int keyId, bool CTRL, bool ALT, bool SHIFT, HANDLE)
+{
+    unsigned int MODS = 0;
+    if (CTRL)
+        MODS |= MOD_CONTROL;
+    if (ALT)
+        MODS |= MOD_ALT;
+    if (SHIFT)
+        MODS |= MOD_SHIFT;
+
+    if (!RegisterHotKey(NULL, 1, MODS | MOD_NOREPEAT, keyId)) {
+        printf("Error registering hotkey: %d\n%ws\n", GetLastError(), getLastErrorStr());
+    }
+    else {
+        printf("Registered hotkey %s %s %s 0x%02x\n", CTRL ? "CTRL + " : "", ALT ? "ALT + " : "", SHIFT ? "SHIFT + " : "", keyId);
+    }
+
+    return;
 }
 
 void filterResultsUI(MBLOCK* scanData)

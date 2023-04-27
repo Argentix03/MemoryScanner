@@ -98,3 +98,5 @@ void printMatchesByte(Node* matches);
 void printMatchesChar(Node* matches);
 void printMatchesShort(Node* matches);
 void printMatchesLongLongInt(Node* matches);
+void configureHotkeyUI(MBLOCK* scanData);
+void configureHotkey(int keyId, bool CTRL, bool ALT, bool SHIFT, HANDLE);
