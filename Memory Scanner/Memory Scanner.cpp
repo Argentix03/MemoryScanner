@@ -517,7 +517,7 @@ void printMemblock(MBLOCK* mb, int print_memory)
     printf("%-4d\t", mb->id);
     printf("0x%-18p\t\t", addr);
     printf("%5lu KB\t", size_kb);
-    printf("%-8s: %-5s\t", mem_type, mem_state);
+    printf("%-7s: %-5s\t", mem_type, mem_state);
     printf("%s\n", mem_protect);
 
     if (print_memory)
