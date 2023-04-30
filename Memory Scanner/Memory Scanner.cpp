@@ -89,7 +89,7 @@ char* getStringState(DWORD state)
 {
     char buf[50];
     char* memory_state = (char*)calloc(sizeof(char), sizeof(buf));
-    strcpy_s(buf, "State: ");
+    strcpy_s(buf, "");
     if (state == MEM_COMMIT) // 0x1000
         strcat_s(buf, "MEM_COMMIT");
     else if (state == MEM_FREE) // 0x10000
@@ -107,13 +107,13 @@ char* getStringType(DWORD memType)
 {
     char buf[50];
     char* memory_type = (char*)calloc(sizeof(char), sizeof(buf));
-    strcpy_s(buf, "Type: ");
+    strcpy_s(buf, "");
     if (memType == MEM_PRIVATE) // 0x20000
-        strcat_s(buf, "MEM_PRIVATE");
+        strcat_s(buf, "Private");
     else if (memType == MEM_MAPPED) // 0x40000
-        strcat_s(buf, "MEM_MAPPED");
+        strcat_s(buf, "Mapped");
     else if (memType == MEM_IMAGE) // 0x1000000
-        strcat_s(buf, "MEM_IMAGE");
+        strcat_s(buf, "Image");
 
     strcpy_s(memory_type, sizeof(buf), buf);
     return memory_type;
@@ -496,6 +496,8 @@ void closeScan(MBLOCK* memlist)
 void printScan(MBLOCK* memlist)
 {
     MBLOCK* mb = memlist;
+    printf("%-4s\t%-18s\t%16s\t%-20s\t%s\n","ID", "Address", "Size","Type:State","Permissions");
+    printf("----------------------------------------------------------------------------------------------\n");
 
     while (mb) {
         printMemblock(mb, FALSE);
@@ -512,12 +514,11 @@ void printMemblock(MBLOCK* mb, int print_memory)
     const char* mem_state = getStringState(mb->mbi.State);
     const char* mem_type = getStringType(mb->mbi.Type);
     const char* mem_protect = getStringProtection(mb->mbi.Protect);
-    printf("ID: %d\t", mb->id); // memblock id
-    printf("0x%p\t", addr); // address
-    printf("%8lu KB\t", size_kb); // size
-    printf("%-*s\t", 18, mem_state);  // commit state
-    printf("%-*s\t", 18, mem_type);  // commit type
-    printf("%s\n", mem_protect);  // permissions
+    printf("%-4d\t", mb->id);
+    printf("0x%-18p\t\t", addr);
+    printf("%5lu KB\t", size_kb);
+    printf("%-8s: %-5s\t", mem_type, mem_state);
+    printf("%s\n", mem_protect);
 
     if (print_memory)
         printBuffer(mb);
