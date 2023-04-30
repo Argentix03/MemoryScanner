@@ -120,3 +120,4 @@ void configureHotkeyUI(MBLOCK* scanData);
 void configureHotkey(int keyId, bool CTRL, bool ALT, bool SHIFT, SHORTCUT_TYPE type, HANDLE hProc);
 bool suspendTarget(HANDLE hProc, bool toggle);
 DWORD WINAPI shortcutHandler(LPVOID lpParam);
+char* getStringType(DWORD memType);

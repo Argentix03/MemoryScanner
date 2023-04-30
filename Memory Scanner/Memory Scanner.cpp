@@ -11,7 +11,7 @@
 //      8. extended information on modules and relative/static addresses and commit types.
 //      9. pointermaps!!
 //      10. tracing aka 'find what access/writes to this address'???
-//      11. bonus: generic speedhack (hook game ticks to fake time).                         ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
+//      11. bonus: generic speedhack (hook game ticks to fake time). ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
 
 #include <Windows.h>
 #include <stdio.h>
@@ -47,7 +47,7 @@ char* getStringProtection(DWORD protection)
         return protection_string;
     }
 
-    strcpy_s(buf, "Memory Permissions: ");
+    strcpy_s(buf, "Permissions: ");
     protection_extra = protection;
     protection &= 0xff;
     if (protection == PAGE_EXECUTE) // 0x10
@@ -99,6 +99,24 @@ char* getStringState(DWORD state)
 
     strcpy_s(memory_state, sizeof(buf), buf);
     return memory_state;
+}
+
+// Convert MEMORY_BASIC_INFORMATION.Type into comfy string representation.
+// Return a pointer to a newly allocated string.
+char* getStringType(DWORD memType)
+{
+    char buf[50];
+    char* memory_type = (char*)calloc(sizeof(char), sizeof(buf));
+    strcpy_s(buf, "Type: ");
+    if (memType == MEM_PRIVATE) // 0x20000
+        strcat_s(buf, "MEM_PRIVATE");
+    else if (memType == MEM_MAPPED) // 0x40000
+        strcat_s(buf, "MEM_MAPPED");
+    else if (memType == MEM_IMAGE) // 0x1000000
+        strcat_s(buf, "MEM_IMAGE");
+
+    strcpy_s(memory_type, sizeof(buf), buf);
+    return memory_type;
 }
 
 // Creates a new memblock 
@@ -492,11 +510,13 @@ void printMemblock(MBLOCK* mb, int print_memory)
     unsigned long int size_kb = mb->size >> 10;
     PVOID addr = mb->addr;
     const char* mem_state = getStringState(mb->mbi.State);
+    const char* mem_type = getStringType(mb->mbi.Type);
     const char* mem_protect = getStringProtection(mb->mbi.Protect);
     printf("ID: %d\t", mb->id); // memblock id
     printf("0x%p\t", addr); // address
     printf("%8lu KB\t", size_kb); // size
-    printf("%s\t", mem_state);  // commit state
+    printf("%-*s\t", 18, mem_state);  // commit state
+    printf("%-*s\t", 18, mem_type);  // commit type
     printf("%s\n", mem_protect);  // permissions
 
     if (print_memory)
