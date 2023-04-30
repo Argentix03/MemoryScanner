@@ -7,17 +7,20 @@
 //      5. scans for other data types.
 //      6. save matches
 //      7. hotkey to pause/resume target process
+//      8. extended information on modules and relative/static addresses and commit types. Add 'use' for mapped/image.
 //  TODO:
-//      8. extended information on modules and relative/static addresses and commit types.
 //      9. pointermaps!!
 //      10. tracing aka 'find what access/writes to this address'???
 //      11. bonus: generic speedhack (hook game ticks to fake time). ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
 
 #include <Windows.h>
+#include <Psapi.h>
 #include <stdio.h>
+#include <Shlwapi.h>
 #include "memscan.h"
 #include <conio.h>
 #include <winternl.h>
+#pragma comment(lib, "Shlwapi.lib")
 
 // globals
 
@@ -47,7 +50,7 @@ char* getStringProtection(DWORD protection)
         return protection_string;
     }
 
-    strcpy_s(buf, "Permissions: ");
+    strcpy_s(buf, "");
     protection_extra = protection;
     protection &= 0xff;
     if (protection == PAGE_EXECUTE) // 0x10
@@ -67,9 +70,9 @@ char* getStringProtection(DWORD protection)
     else if (protection == PAGE_WRITECOPY) // 0x08
         strcat_s(buf, "WC");
     else if (protection == PAGE_TARGETS_INVALID) // 0x40000000 (CFG Stuff)
-        strcat_s(buf, "PAGE_TARGETS_INVALID");
+        strcat_s(buf, "CFG Stuff");
     else if (protection == PAGE_TARGETS_NO_UPDATE) // 0x40000000 (CFG Stuff)
-        strcat_s(buf, "PAGE_TARGETS_NO_UPDATE");
+        strcat_s(buf, "CFG Stuff");
 
     // Extra protections
     if (protection_extra & PAGE_GUARD) // 0x100
@@ -117,6 +120,21 @@ char* getStringType(DWORD memType)
 
     strcpy_s(memory_type, sizeof(buf), buf);
     return memory_type;
+}
+
+// Convert Region start address into comfy string representation of what its used for.
+// Return a pointer to a newly allocated string (might be empty if nothing was found).
+WCHAR* getStringUse(MBLOCK* mb)
+{   
+    if (mb->mbi.Type == MEM_IMAGE) {
+        WCHAR* modulePath = (WCHAR*)calloc(sizeof(WCHAR), MAX_PATH);
+        DWORD dwSize = MAX_PATH;
+        GetModuleFileNameEx(mb->hProc, (HMODULE)mb->mbi.AllocationBase, modulePath, dwSize);  // if doesnt work well maybe can try mbi.allocationBase
+
+        return modulePath;
+    }
+
+    return (WCHAR*)L"";
 }
 
 // Creates a new memblock 
@@ -319,18 +337,14 @@ Node* filterAddresses(MBLOCK* memlist, uintptr_t value, HUNTING_TYPE dataType, i
                     break;
                 }
                 if (matched) {
-                    //printf("Memblock id: %d\n", mb->id);
-                    //printf("Memblock address: 0x%llx\n", membyte);
-                    //printf("content: ");
-                    //const char* fmt = printValue(dataType, value);
-                    //putchar('\n');
-
                     MATCH* newMatch = (MATCH*)malloc(sizeof(MATCH));
                     long long int offset = membyte - (long long int) (mb->buffer);
                     long long int remote_address = (long long int) mb->addr + offset;
+                    bool isStatic = StrCmpW(L"", getStringUse(mb));
                     newMatch->address = (PVOID)remote_address;
                     newMatch->memblock_id = mb->id;
                     newMatch->memblock = mb;
+                    newMatch->isStatic = isStatic;
                     matches = insertMatch(newMatch, matches);
                 }
 
@@ -496,8 +510,8 @@ void closeScan(MBLOCK* memlist)
 void printScan(MBLOCK* memlist)
 {
     MBLOCK* mb = memlist;
-    printf("%-4s\t%-18s\t%16s\t%-20s\t%s\n","ID", "Address", "Size","Type:State","Permissions");
-    printf("----------------------------------------------------------------------------------------------\n");
+    printf("%-4s\t%-18s\t%16s\t%-20s\t%-14s\t%s\n","ID", "Address", "Size","Type:State","Permissions", "Use");
+    printf("---------------------------------------------------------------------------------------------------\n");
 
     while (mb) {
         printMemblock(mb, FALSE);
@@ -507,18 +521,20 @@ void printScan(MBLOCK* memlist)
     return;
 }
 
-void printMemblock(MBLOCK* mb, int print_memory)
+void printMemblock(MBLOCK* mb, bool print_memory)
 {
     unsigned long int size_kb = mb->size >> 10;
     PVOID addr = mb->addr;
     const char* mem_state = getStringState(mb->mbi.State);
     const char* mem_type = getStringType(mb->mbi.Type);
     const char* mem_protect = getStringProtection(mb->mbi.Protect);
+    const WCHAR* mem_use = getStringUse(mb);
     printf("%-4d\t", mb->id);
     printf("0x%-18p\t\t", addr);
     printf("%5lu KB\t", size_kb);
     printf("%-7s: %-5s\t", mem_type, mem_state);
-    printf("%s\n", mem_protect);
+    printf("%-14s\t", mem_protect);
+    printf("%ls\n", mem_use);
 
     if (print_memory)
         printBuffer(mb);
@@ -691,12 +707,20 @@ bool newScanUI()
     scanf_s("%d", &pid);
     printf("Starting scan\n");
     MBLOCK* scanData = startScan(pid);
+
+    WCHAR imageName[MAX_PATH];
+    WCHAR imagePath[MAX_PATH];
+    DWORD dwSize = sizeof(imagePath);
+    GetModuleFileNameEx(scanData->hProc, NULL, imagePath, dwSize);
+    WCHAR* processName = PathFindFileName(imagePath);
+    printf("Process: %ls\n", processName);
+    printf("Image path: %ls\n", imagePath);
+
     if (!scanData) {
         // implement more logic here. eg. insufficient permission to get handle, tell user to run as admin etc.
         printf("Scan failed\n");
         return 0;
     }
-
     printScan(scanData);
 
     int userChoice;
@@ -1273,7 +1297,17 @@ void printMatchesPointer(Node* matches)
             if (!(GetLastError() == 299))
                 printf("Error reading updated value of match: %llp\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%llx Value: %llp\n", match->memblock_id, match->address, remote_value);
+        printf("\nMemblock ID: %d Address: 0x%llx Value: %llp\n", 
+            match->memblock_id, 
+            match->address, 
+            remote_value
+        );
+        if (match->isStatic) {
+            char* charAddr = (char*)match->address;
+            char* charBase = (char*)match->memblock->mbi.AllocationBase;
+            ptrdiff_t offset = charAddr - charBase;
+            printf("Static Address: %ls + 0x%x\n", getStringUse(match->memblock), offset);
+        }
 
         curr = curr->next;
     }
@@ -1292,7 +1326,14 @@ void printMatchesByte(Node* matches)
             if (!(GetLastError() == 299))
                 printf("Error reading updated value of match: %llp\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%llx Value: 0x%02x\n", match->memblock_id, match->address, remote_value);
+        printf("\nMemblock ID: %d Address: 0x%llx Value: 0x%02x\n", 
+            match->memblock_id, 
+            match->address, 
+            remote_value
+        );
+        if (match->isStatic) {
+            printf("Region use: %ls\n", getStringUse(match->memblock));
+        }
 
         curr = curr->next;
     }
@@ -1312,7 +1353,12 @@ void printMatchesInt(Node* matches)
             if (!(GetLastError() == 299))
                 printf("Error reading updated value of match: %llp\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%llx Value: %d\n", match->memblock_id, match->address, remote_value);
+        printf("\nMemblock ID: %d Address: 0x%llx Value: %d\n", 
+            match->memblock_id, 
+            match->address, 
+            remote_value
+        );
+        printInsights(match);
 
         curr = curr->next;
     }
@@ -1375,7 +1421,6 @@ void printMatchesLongLongInt(Node* matches)
     }
 }
 
-
 void printMatchesDouble(Node* matches)
 {
     Node* head = matches;
@@ -1392,6 +1437,19 @@ void printMatchesDouble(Node* matches)
 
         curr = curr->next;
     }
+}
+
+void printInsights(MATCH* match)
+{
+    if (match->isStatic) {
+        char* charAddr = (char*)match->address;
+        char* charBase = (char*)match->memblock->mbi.AllocationBase;
+        ptrdiff_t offset = charAddr - charBase;
+        printf("[+] Dynamic Address: %ls + 0x%x\n", getStringUse(match->memblock), offset);
+    }
+    // [+] check for ASLR disabled
+    // [-] check for stack
+    // [-] check for heap
 }
 
 // for x86-64 modern cpu

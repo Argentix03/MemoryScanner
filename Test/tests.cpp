@@ -1,3 +1,12 @@
+// TODO:
+// Modules
+// MMF
+// Static variables in functions
+// Stack
+// Heap
+// Pointer paths (eg. Engine->map->mob->player, Engine->players->player, ...)
+// Rotate locations (defence) 
+
 #include <stdio.h>
 #include <Windows.h>
 
