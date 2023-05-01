@@ -99,7 +99,7 @@ void printMatches(int dataType, Node* matches);
 void printMatchesInt(Node* matches);
 void printMatchesDouble(Node* matches);
 void freeMatches(Node* matches);
-Node* removeMatch(MATCH* match, Node* matches);
+Node* removeMatch(const MATCH* match, Node* matches);
 void printMemblock(MBLOCK* mb, bool print_memory);
 bool newScanUI();
 void filterResultsUI(MBLOCK* scanData);
@@ -122,4 +122,4 @@ void configureHotkey(int keyId, bool CTRL, bool ALT, bool SHIFT, SHORTCUT_TYPE t
 bool suspendTarget(HANDLE hProc, bool toggle);
 DWORD WINAPI shortcutHandler(LPVOID lpParam);
 char* getStringType(DWORD memType);
-void printInsights(MATCH* match);
+void printInsights(const MATCH* match);
