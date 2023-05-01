@@ -221,34 +221,7 @@ Node* filterAddresses(MBLOCK* memlist, uintptr_t value, HUNTING_TYPE dataType, i
         printf("searching for value: ");
     else
         printf("filtering matches for value: ");
-
-    switch (dataType)
-    {
-    case type_byte:
-        printValue(dataType, value);
-        break;
-    case type_char:
-        printValue(dataType, value);
-        break;
-    case type_float:
-        printValue(dataType, value);
-        break;
-    case type_double:
-        printValue(dataType, value);
-        break;
-    case type_short:
-        printValue(dataType, value);
-        break;
-    case type_int:
-        printValue(dataType, value);
-        break;
-    case type_long_long_int:
-        printValue(dataType, value);
-        break;
-    case type_pointer:
-        printValue(dataType, value);
-        break;
-    }
+    printValue(dataType, value);
     putchar('\n');
 
     // filter on given matches
@@ -383,7 +356,7 @@ bool matchValue(long long int addr, int value, int pattern_len)
     return true;
 }
 
-const char* printValue(int dataType, uintptr_t value)
+void printValue(int dataType, uintptr_t value)
 {
     switch (dataType)
     {
@@ -410,8 +383,6 @@ const char* printValue(int dataType, uintptr_t value)
         printf("0x%p", (uintptr_t)value);
         break;
     }
-
-    return "";
 }
 
 // basically matches wide strings
@@ -798,6 +769,8 @@ bool newScanUI()
 
 void savedMatchesUI()
 {
+    // Later add the interaction here like Freeze/Unfreeze, Trace Access, etc.
+    printf("Saved addresses: %d\n", countMatches(g_savedMatches));
     printMatches(g_savedMatches);
 }
 
@@ -984,26 +957,26 @@ void filterResultsUI(MBLOCK* scanData)
         switch (userChoice)
         {
         case 1:
-            byteScanUI(scanData);
+            scanUI(scanData, type_byte);
             return;
         case 2:
-            charScanUI(scanData);
+            scanUI(scanData, type_char);
             return;
         case 3:
-            shortScanUI(scanData);
+            scanUI(scanData, type_short);
             return;
         case 4:
-            intScanUI(scanData);
+            scanUI(scanData, type_int);
             return;
         case 5:
         case 6:
             printf(NOT_IMPLEMENTED); // floating comparisons not yet implemented (using == atm)
             return;
         case 7:
-            longIntScanUI(scanData);
+            scanUI(scanData, type_long_long_int);
             return;
         case 8:
-            pointerScanUI(scanData);
+            scanUI(scanData, type_pointer);
             return;
         case 9:
             return;
@@ -1025,232 +998,6 @@ int countMatches(const Node* matches)
     return counter;
 }
 
-void intScanUI(MBLOCK* scanData)
-{
-    int value;
-    int matchCount = 0;
-    char repeat;
-    Node* matches = nullptr;
-
-    // find a way to DRY this...
-    printf("Enter value: ");
-    scanf_s("%d", &value);
-    matches = filterAddresses(scanData, value, type_int, 1, matches);
-    matchCount = countMatches(matches);
-    printf("Matches found: %d\n", matchCount);
-    if (matchCount <= 20)
-        printMatches(matches);
-
-    printf("Next Filter? (y/n): ");
-    scanf_s(" %c", &repeat);
-    while (repeat == 'y') {
-        printf("Enter value: ");
-        scanf_s("%d", &value);
-        matches = filterAddresses(NULL, value, type_int, 1, matches);
-        matchCount = countMatches(matches);
-        printf("Matches found: %d\n", matchCount);
-        if (matchCount <= 20)
-            printMatches(matches);
-        printf("Filter more? (y/n): ");
-        scanf_s(" %c", &repeat);
-    }
-
-    char choice;
-    printf("Save matches? (y/n): ");
-    scanf_s(" %c", &choice);
-    if (choice == 'y')
-        saveMatches(matches);
-
-    return;
-}
-
-void byteScanUI(MBLOCK* scanData)
-{
-    int value;
-    char repeat;
-    int matchCount = 0;
-    Node* matches = nullptr;
-
-    printf("Enter value (hex): ");
-    scanf_s("%x", &value);
-    matches = filterAddresses(scanData, value, type_byte, 1, matches);
-    printMatches(matches);
-
-    printf("Next Filter? (y/n): ");
-    scanf_s(" %c", &repeat);
-    while (repeat == 'y') {
-        printf("Enter value: ");
-        scanf_s("%x", &value);
-        matches = filterAddresses(NULL, value, type_byte, 1, matches);
-        matchCount = countMatches(matches);
-        printf("Matches found: %d\n", matchCount);
-        if (matchCount <= 20)
-            printMatches(matches);
-        printf("Filter more? (y/n): ");
-        scanf_s(" %c", &repeat);
-    }
-
-    char choice;
-    printf("Save matches? (y/n): ");
-    scanf_s(" %c", &choice);
-    if (choice == 'y')
-        saveMatches(matches);
-
-    return;
-}
-
-void charScanUI(MBLOCK* scanData)
-{
-    uintptr_t value = 0;
-    char repeat;
-    int matchCount = 0;
-    Node* matches = nullptr;
-
-    printf("Enter value (single character): ");
-    scanf_s(" %c", &value);
-    matches = filterAddresses(scanData, value, type_char, 1, matches);
-    printMatches(matches);
-
-    printf("Next Filter? (y/n): ");
-    scanf_s(" %c", &repeat);
-    while (repeat == 'y') {
-        printf("Enter value (single character): ");
-        scanf_s(" %c", &value);
-        matches = filterAddresses(nullptr, value, type_char, 1, matches);
-        matchCount = countMatches(matches);
-        printf("Matches found: %d\n", matchCount);
-        if (matchCount <= 20)
-            printMatches(matches);
-        printf("Filter more? (y/n): ");
-        scanf_s(" %c", &repeat);
-    }
-
-    char choice;
-    printf("Save matches? (y/n): ");
-    scanf_s(" %c", &choice);
-    if (choice == 'y')
-        saveMatches(matches);
-
-    return;
-}
-
-void shortScanUI(MBLOCK* scanData)
-{
-    int value;
-    char repeat;
-    int matchCount = 0;
-    Node* matches = nullptr;
-
-    printf("Enter value: ");
-    scanf_s("%d", &value);
-    matches = filterAddresses(scanData, value, type_short, 1, matches);
-    printMatches(matches);
-
-    printf("Next Filter? (y/n): ");
-    scanf_s(" %c", &repeat);
-    while (repeat == 'y') {
-        printf("Enter value: ");
-        scanf_s("%d", &value);
-        matches = filterAddresses(NULL, value, type_short, 1, matches);
-        matchCount = countMatches(matches);
-        printf("Matches found: %d\n", matchCount);
-        if (matchCount <= 20)
-            printMatches(matches);
-        printf("Filter more? (y/n): ");
-        scanf_s(" %c", &repeat);
-    }
-
-    char choice;
-    printf("Save matches? (y/n): ");
-    scanf_s(" %c", &choice);
-    if (choice == 'y')
-        saveMatches(matches);
-
-    return;
-}
-
-void floatScanUI(MBLOCK* scanData)
-{
-    // NOT IMPLEMENTED YET
-    return;
-}
-
-void doubleScanUI(MBLOCK* scanData)
-{
-    // NOT IMPLEMENTED YET
-    return;
-}
-
-void longIntScanUI(MBLOCK* scanData)
-{
-    int value;
-    char repeat;
-    int matchCount = 0;
-    Node* matches = nullptr;
-
-    printf("Enter value: ");
-    scanf_s("%lld", &value);
-    matches = filterAddresses(scanData, value, type_long_long_int, 1, matches);
-    printMatches(matches);
-
-    printf("Next Filter? (y/n): ");
-    scanf_s(" %c", &repeat);
-    while (repeat == 'y') {
-        printf("Enter value: ");
-        scanf_s("%lld", &value);
-        matches = filterAddresses(nullptr, value, type_long_long_int, 1, matches);
-        matchCount = countMatches(matches);
-        printf("Matches found: %d\n", matchCount);
-        if (matchCount <= 20)
-            printMatches(matches);
-        printf("Filter more? (y/n): ");
-        scanf_s(" %c", &repeat);
-    }
-
-    char choice;
-    printf("Save matches? (y/n): ");
-    scanf_s(" %c", &choice);
-    if (choice == 'y')
-        saveMatches(matches);
-
-    return;
-}
-
-void pointerScanUI(MBLOCK* scanData)
-{
-    uintptr_t value;
-    char repeat;
-    int matchCount = 0;
-    Node* matches = nullptr;
-
-    printf("Enter value (hex): ");
-    scanf_s("%llx", &value);
-    matches = filterAddresses(scanData, value, type_pointer, 1, matches);
-    printMatches(matches);
-
-    printf("Next Filter? (y/n): ");
-    scanf_s(" %c", &repeat);
-    while (repeat == 'y') {
-        printf("Enter value: ");
-        scanf_s("%llx", &value);
-        matches = filterAddresses(nullptr, value, type_pointer, 1, matches);
-        matchCount = countMatches(matches);
-        printf("Matches found: %d\n", matchCount);
-        if (matchCount <= 20)
-            printMatches(matches);
-        printf("Filter more? (y/n): ");
-        scanf_s(" %c", &repeat);
-    }
-
-    char choice;
-    printf("Save matches? (y/n): ");
-    scanf_s(" %c", &choice);
-    if (choice == 'y')
-        saveMatches(matches);
-
-    return;
-}
-
 void saveMatches(Node* matches)
 {
     MATCH* match;
@@ -1262,6 +1009,77 @@ void saveMatches(Node* matches)
     }
 
     return;
+}
+
+void scanUI(MBLOCK* scanData, HUNTING_TYPE type)
+{
+    uintptr_t value;
+    char repeat;
+    int matchCount = 0;
+    Node* matches = nullptr;
+
+    value = getUserInputForTypeUI(type);
+    matches = filterAddresses(scanData, value, type, 1, matches);
+    printMatches(matches);
+
+    printf("Next Filter? (y/n): ");
+    scanf_s(" %c", &repeat);
+    while (repeat == 'y') {
+        printf("Enter value: ");
+        scanf_s("%llx", &value);
+        matches = filterAddresses(nullptr, value, type, 1, matches);
+        matchCount = countMatches(matches);
+        printf("Matches found: %d\n", matchCount);
+        if (matchCount <= 20)
+            printMatches(matches);
+        printf("Filter more? (y/n): ");
+        scanf_s(" %c", &repeat);
+    }
+
+    char choice;
+    printf("Save matches? (y/n): ");
+    scanf_s(" %c", &choice);
+    if (choice == 'y')
+        saveMatches(matches);
+
+    return;
+}
+
+uintptr_t getUserInputForTypeUI(HUNTING_TYPE type)
+{
+    uintptr_t value = 0;
+    switch (type)
+    {
+    case type_byte:
+        printf("Enter value (hex): ");
+        scanf_s("%x", &value);
+        break;
+    case type_char:
+        printf("Enter value (single character): ");
+        scanf_s(" %c", &value);
+        break;
+    case type_short:
+    case type_int:
+        printf("Enter value: ");
+        scanf_s("%d", &value);
+        break;
+    case type_float:
+    case type_double:
+        printf(NOT_IMPLEMENTED);
+        break;
+    case type_long_long_int:
+        printf("Enter value: ");
+        scanf_s("%lld", &value);
+        break;
+    case type_pointer:
+        printf("Enter value (hex): ");
+        scanf_s("%llx", &value);
+        break;
+    default:
+        printf("stfu what is this type how did it get here\n");
+    }
+
+    return value;
 }
 
 // sorts by address. even though its mostly used in a sequential manner by a linear low to high memory region mapping so it comes sorted anyway.

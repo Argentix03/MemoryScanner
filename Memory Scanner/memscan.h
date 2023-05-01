@@ -93,7 +93,7 @@ bool matchPatternWideChar(long long int addr, const WCHAR pattern[], int pattern
 Node* insertMatch(MATCH* newMatch, Node* matches);
 void printMatchesWideChar(int length, Node* matches);
 Node* filterAddresses(MBLOCK* scanResults, uintptr_t value, int dataType, int data_len, Node* matches);
-const char* printValue(int dataType, uintptr_t value);
+void printValue(int dataType, uintptr_t value);
 int getSizeForType(int dataType);
 void freeMatches(Node* matches);
 Node* removeMatch(const MATCH* match, Node* matches);
@@ -119,3 +119,6 @@ void saveMatches(Node* matches);
 void savedMatchesUI();
 void mainMenuUI();
 void printMatches(Node* matches);
+void scanUI(MBLOCK* scanData, HUNTING_TYPE type);
+uintptr_t getUserInputForTypeUI(HUNTING_TYPE type);
+int countMatches(const Node* matches);
