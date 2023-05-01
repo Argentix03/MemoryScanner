@@ -86,7 +86,7 @@ WCHAR* getLastErrorStr();
 void printScan(MBLOCK*);
 void closeScan(MBLOCK*);
 MBLOCK* startScan(int pid);
-void freeMemBlock(MBLOCK*);
+void freeMemBlock(const MBLOCK*);
 void printBuffer(MBLOCK* mb);
 void printUsageAndExit();
 bool matchPatternWideChar(long long int addr, const WCHAR pattern[], int pattern_len);

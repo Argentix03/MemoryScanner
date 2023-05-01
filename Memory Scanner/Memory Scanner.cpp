@@ -88,7 +88,7 @@ char* getStringProtection(DWORD protection)
 
 // Convert MEMORY_BASIC_INFORMATION.State into comfy string representation.
 // Return a pointer to a newly allocated string.
-char* getStringState(DWORD state)
+char* getStringState(const DWORD state)
 {
     char buf[50];
     char* memory_state = (char*)calloc(sizeof(char), sizeof(buf));
@@ -193,8 +193,8 @@ void searchWideChar(MBLOCK* memlist, const WCHAR pattern[], int pattern_len, Nod
                 printf("content: %ws\n", (WCHAR *) membyte);
 
                 MATCH* newMatch = (MATCH *) malloc(sizeof(MATCH));
-                long long int offset = membyte - (long long int) (mb->buffer);
-                long long int remote_address = (long long int) mb->addr + offset;
+                const long long int offset = membyte - (long long int) (mb->buffer);
+                const long long int remote_address = (long long int) mb->addr + offset;
                 newMatch->address = (PVOID) remote_address;
                 newMatch->memblock_id = mb->id;
                 newMatch->memblock = mb;
@@ -340,7 +340,7 @@ Node* filterAddresses(MBLOCK* memlist, uintptr_t value, HUNTING_TYPE dataType, i
                     MATCH* newMatch = (MATCH*)malloc(sizeof(MATCH));
                     long long int offset = membyte - (long long int) (mb->buffer);
                     long long int remote_address = (long long int) mb->addr + offset;
-                    bool isStatic = StrCmpW(L"", getStringUse(mb));
+                    const bool isStatic = StrCmpW(L"", getStringUse(mb));
                     newMatch->address = (PVOID)remote_address;
                     newMatch->memblock_id = mb->id;
                     newMatch->memblock = mb;
@@ -363,7 +363,7 @@ bool matchValue(long long int addr, int value, int pattern_len)
     int matching = 0;
     --pattern_len;
     for (int i = 0; i <= pattern_len; ++i) {
-        if (!(*((int*)addr + i) == value))
+        if (*((int*)addr + i) != value)
             return false;
         else
             matching++;
@@ -387,13 +387,13 @@ const char* printValue(int dataType, uintptr_t value)
         printf("%f", (double)value);
         break;
     case type_short:
-        printf("%h", (short)value);
+        printf("%hd", (short)value);
         break;
     case type_int:
         printf("%d", (int)value);
         break;
     case type_long_long_int:
-        printf("%ld", (long long int)value);
+        printf("%lli", (long long int)value);
         break;
     case type_pointer:
         printf("0x%p", (uintptr_t)value);
@@ -408,7 +408,7 @@ bool matchPatternWideChar(long long int addr, const WCHAR pattern[], int pattern
 {
     int matching = 0;
     for (int i = 0; i <= pattern_len; ++i) {
-        if (!(*((WCHAR*)addr + i) == pattern[i]))
+        if (*((WCHAR*)addr + i) != pattern[i])
             return false;
         else
             matching++;
@@ -433,7 +433,7 @@ void printBuffer(MBLOCK* mb)
 }
 
 // free blocks.
-void freeMemBlock(MBLOCK* mb)
+void freeMemBlock(const MBLOCK* mb)
 {
     if (!mb)
         return;
@@ -443,7 +443,7 @@ void freeMemBlock(MBLOCK* mb)
     }
 }
 
-// starts a scan. currenly no filters implemeneted. scans through a full process' (commited) memory.
+// starts a scan. currently no filters implemented. scans through a full process' (committed) memory.
 // returns memlist - first member of the linked-list of memblocks created in the scan.
 MBLOCK* startScan(int pid)
 {
@@ -464,10 +464,10 @@ MBLOCK* startScan(int pid)
         if (debug)
             printf("VirtualQuery: %p\n", addr);
 
-        // skip if memory not commited or writable flag set and memory isnt writable
-        bool mem_commited = mbi.State & MEM_COMMIT;
-        bool mem_writable = mbi.Protect & WRITEABLE_MEM;
-        if (mem_commited && (!writable_only || mem_writable)) {
+        // skip if memory not committed or writable flag set and memory isn't writable
+        const bool mem_committed = mbi.State & MEM_COMMIT;
+        const bool mem_writable = mbi.Protect & WRITEABLE_MEM;
+        if (mem_committed && (!writable_only || mem_writable)) {
             // save info to memblock and add memblock to the list
             MBLOCK* memblock = createMemBlock(hProc, mbi);
             if (!memblock) {
@@ -479,8 +479,8 @@ MBLOCK* startScan(int pid)
         }
         else {
             if (debug) {
-                if (!mem_commited)
-                    printf("Skipping uncommited memory: %p\n", addr);
+                if (!mem_committed)
+                    printf("Skipping uncommitted memory: %p\n", addr);
                 if (!mem_writable)
                     printf("Skipping unwritable memory: %p\n", addr);
             }
@@ -497,7 +497,7 @@ MBLOCK* startScan(int pid)
 void closeScan(MBLOCK* memlist)
 {
     do {
-        MBLOCK* mb = memlist;
+	    const MBLOCK* mb = memlist;
         freeMemBlock(mb);
         if (!memlist->next)
             CloseHandle(memlist->hProc);  // same handle for the whole memlist
@@ -521,10 +521,10 @@ void printScan(MBLOCK* memlist)
     return;
 }
 
-void printMemblock(MBLOCK* mb, bool print_memory)
+void printMemblock(MBLOCK* mb, const bool print_memory)
 {
-    unsigned long int size_kb = mb->size >> 10;
-    PVOID addr = mb->addr;
+	const unsigned long int size_kb = mb->size >> 10;
+	const PVOID addr = mb->addr;
     const char* mem_state = getStringState(mb->mbi.State);
     const char* mem_type = getStringType(mb->mbi.Type);
     const char* mem_protect = getStringProtection(mb->mbi.Protect);
@@ -548,8 +548,8 @@ WCHAR* getLastErrorStr()
     WCHAR* buf = (WCHAR*) malloc(sizeof(WCHAR) * 256);
     FormatMessageW(
         FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-        NULL, GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        buf, 256, NULL
+        nullptr, GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        buf, 256, nullptr
     );
 
     return buf;
@@ -569,12 +569,12 @@ int main(int argc, char** argv)
     // listener and handler for shortcuts
     InitializeCriticalSection(&cs);
     HANDLE hThread = CreateThread(
-        NULL,               // default security attributes
+	    nullptr,               // default security attributes
         0,                  // use default stack size  
         shortcutHandler,    // thread function name
         shortcuts,          // argument to thread function 
         0,                  // use default creation flags
-        NULL
+        nullptr
     );                      
 
     // main UI loop
@@ -591,7 +591,7 @@ int main(int argc, char** argv)
         {
         case 1:
         {
-            int result = newScanUI();
+            const int result = newScanUI();
             if (!result) {
                 printf("newScanUI return fail status. maybe run as admin\n");
                 continue; // back to loop
@@ -600,6 +600,7 @@ int main(int argc, char** argv)
         }
         case 2:
             exit(0);
+		default: ;
         }
     }
 
@@ -632,9 +633,9 @@ DWORD WINAPI shortcutHandler(LPVOID lpParam)
                     MODS |= MOD_ALT;
                 if (shortcut->SHIFT)
                     MODS |= MOD_SHIFT;
-                HRESULT result = RegisterHotKey(NULL, i, MODS, shortcut->keyId);
+                const BOOL result = RegisterHotKey(nullptr, i, MODS, shortcut->keyId);
                 shortcut->reset = false;
-                if(!result)
+                if(FAILED(result))
                     printf("Error registering hotkey: %d\n%ws\n", GetLastError(), getLastErrorStr());
                 else
                     printf("Registered hotkey %s %s %s %c (0x%02x)\n", 
@@ -649,9 +650,9 @@ DWORD WINAPI shortcutHandler(LPVOID lpParam)
         }
 
         // handle hotkey press
-        if (PeekMessage(&msg, NULL, 0, 0, 0)) {
+        if (PeekMessage(&msg, nullptr, 0, 0, 0)) {
             if (msg.message == WM_HOTKEY) {
-                GetMessage(&msg, NULL, 0, 0);
+                GetMessage(&msg, nullptr, 0, 0);
                 shortcut = shortcuts[msg.wParam];
                 switch (shortcut->type)
                 {
@@ -673,13 +674,13 @@ DWORD WINAPI shortcutHandler(LPVOID lpParam)
     }
 }
 
-bool suspendTarget(HANDLE hProc, bool toggle)
+bool suspendTarget(const HANDLE hProc, const bool toggle)
 {
     // Import NtSuspendProcess/NtResumeProcess from ntdll.dll to suspend/resume all threads at once.
     typedef LONG(NTAPI* pNtSuspendProcess)(HANDLE ProcessHandle);
     typedef LONG(NTAPI* pNtResumeProcess)(HANDLE ProcessHandle);
-    pNtSuspendProcess NtSuspendProcess = (pNtSuspendProcess) GetProcAddress(GetModuleHandle(L"ntdll.dll"), "NtSuspendProcess");
-    pNtResumeProcess NtResumeProcess = (pNtResumeProcess) GetProcAddress(GetModuleHandle(L"ntdll.dll"), "NtResumeProcess");
+    const pNtSuspendProcess NtSuspendProcess = (pNtSuspendProcess) GetProcAddress(GetModuleHandle(L"ntdll.dll"), "NtSuspendProcess");
+    const pNtResumeProcess NtResumeProcess = (pNtResumeProcess) GetProcAddress(GetModuleHandle(L"ntdll.dll"), "NtResumeProcess");
     if (NtSuspendProcess && NtResumeProcess) {
         HRESULT result;
         if (toggle)
@@ -710,17 +711,18 @@ bool newScanUI()
 
     WCHAR imageName[MAX_PATH];
     WCHAR imagePath[MAX_PATH];
-    DWORD dwSize = sizeof(imagePath);
-    GetModuleFileNameEx(scanData->hProc, NULL, imagePath, dwSize);
+    constexpr DWORD dwSize = sizeof(imagePath);
+    GetModuleFileNameEx(scanData->hProc, nullptr, imagePath, dwSize);
+     if (!scanData) {
+        // implement more logic here. eg. insufficient permission to get handle, tell user to run as admin etc.
+        printf("Scan failed\n");
+        return false;
+    }
+
     WCHAR* processName = PathFindFileName(imagePath);
     printf("Process: %ls\n", processName);
     printf("Image path: %ls\n", imagePath);
 
-    if (!scanData) {
-        // implement more logic here. eg. insufficient permission to get handle, tell user to run as admin etc.
-        printf("Scan failed\n");
-        return 0;
-    }
     printScan(scanData);
 
     int userChoice;
@@ -764,7 +766,7 @@ bool newScanUI()
             break;
         case 5:
             closeScan(scanData);  
-            return 1; //back to main menu
+            return true; //back to main menu
             break;
         default:
             printf("Invalid choice\n");
@@ -985,10 +987,10 @@ void filterResultsUI(MBLOCK* scanData)
     }
 }
 
-int countMatches(Node* matches)
+int countMatches(const Node* matches)
 {
     int counter = 0;
-    Node* match = matches;
+    const Node* match = matches;
     while (match) {
         counter++;
         match = match->next;
@@ -1072,7 +1074,7 @@ void charScanUI(MBLOCK* scanData)
     while (repeat == 'y') {
         printf("Enter value (single character): ");
         scanf_s(" %c", &value);
-        matches = filterAddresses(NULL, value, type_char, 1, matches);
+        matches = filterAddresses(nullptr, value, type_char, 1, matches);
         matchCount = countMatches(matches);
         printf("Matches found: %d\n", matchCount);
         if (matchCount <= 20)
@@ -1138,7 +1140,7 @@ void longIntScanUI(MBLOCK* scanData)
     while (repeat == 'y') {
         printf("Enter value: ");
         scanf_s("%lld", &value);
-        matches = filterAddresses(NULL, value, type_long_long_int, 1, matches);
+        matches = filterAddresses(nullptr, value, type_long_long_int, 1, matches);
         matchCount = countMatches(matches);
         printf("Matches found: %d\n", matchCount);
         if (matchCount <= 20)
@@ -1165,7 +1167,7 @@ void pointerScanUI(MBLOCK* scanData)
     while (repeat == 'y') {
         printf("Enter value: ");
         scanf_s("%llx", &value);
-        matches = filterAddresses(NULL, value, type_long_long_int, 1, matches);
+        matches = filterAddresses(nullptr, value, type_long_long_int, 1, matches);
         matchCount = countMatches(matches);
         printf("Matches found: %d\n", matchCount);
         if (matchCount <= 20)
@@ -1200,7 +1202,7 @@ Node* insertMatch(MATCH* newMatch, Node* matches) {
     return head;
 }
 
-Node* removeMatch(MATCH* matchToRemove, Node* matches) {
+Node* removeMatch(const MATCH* matchToRemove, Node* matches) {
     Node* curr = matches;
     Node* prev = nullptr;
 
@@ -1245,7 +1247,7 @@ void printMatchesWideChar(int length, Node* matches) {
         if (!ReadProcessMemory(match->memblock->hProc, match->address, remote_value, size, NULL)) {
             printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%llx Value: %ls\n", match->memblock_id, match->address, remote_value);
+        printf("\nMemblock ID: %d Address: 0x%p Value: %ls\n", match->memblock_id, match->address, remote_value);
 
         curr = curr->next;
     }
@@ -1279,6 +1281,7 @@ void printMatches(int dataType, Node* matches)
     case type_pointer:
         printMatchesPointer(matches);
         break;
+default: ;
     }
 
     return;
@@ -1292,21 +1295,21 @@ void printMatchesPointer(Node* matches)
     uintptr_t remote_value;
 
     while (curr != nullptr) {
-        MATCH* match = curr->match;
-        if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
-            if (!(GetLastError() == 299))
-                printf("Error reading updated value of match: %llp\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+        const MATCH* match = curr->match;
+        if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, nullptr)) {
+            if (GetLastError() != 299)
+                printf("Error reading updated value of match: %p\nError id: %lu\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%llx Value: %llp\n", 
+        printf("\nMemblock ID: %d Address: 0x%p Value: %llu\n", 
             match->memblock_id, 
             match->address, 
             remote_value
         );
         if (match->isStatic) {
-            char* charAddr = (char*)match->address;
-            char* charBase = (char*)match->memblock->mbi.AllocationBase;
-            ptrdiff_t offset = charAddr - charBase;
-            printf("Static Address: %ls + 0x%x\n", getStringUse(match->memblock), offset);
+            const char* charAddr = (char*)match->address;
+            const char* charBase = (char*)match->memblock->mbi.AllocationBase;
+            const ptrdiff_t offset = charAddr - charBase;
+            printf("Static Address: %ls + 0x%lld\n", getStringUse(match->memblock), offset);
         }
 
         curr = curr->next;
@@ -1323,10 +1326,10 @@ void printMatchesByte(Node* matches)
     while (curr != nullptr) {
         MATCH* match = curr->match;
         if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
-            if (!(GetLastError() == 299))
+            if (GetLastError() != 299)
                 printf("Error reading updated value of match: %llp\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%llx Value: 0x%02x\n", 
+        printf("\nMemblock ID: %d Address: 0x%p Value: 0x%02x\n", 
             match->memblock_id, 
             match->address, 
             remote_value
@@ -1353,7 +1356,7 @@ void printMatchesInt(Node* matches)
             if (!(GetLastError() == 299))
                 printf("Error reading updated value of match: %llp\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%llx Value: %d\n", 
+        printf("\nMemblock ID: %d Address: 0x%p Value: %d\n", 
             match->memblock_id, 
             match->address, 
             remote_value
@@ -1372,12 +1375,12 @@ void printMatchesChar(Node* matches)
     char remote_value;
 
     while (curr != nullptr) {
-        MATCH* match = curr->match;
-        if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
+        const MATCH* match = curr->match;
+        if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, nullptr)) {
             if (!(GetLastError() == 299))
-                printf("Error reading updated value of match: %llp\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+                printf("Error reading updated value of match: %pll\nError id: %lu\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%llx Value: %c\n", match->memblock_id, match->address, remote_value);
+        printf("\nMemblock ID: %d Address: 0x%p Value: %c\n", match->memblock_id, match->address, remote_value);
 
         curr = curr->next;
     }
@@ -1410,12 +1413,12 @@ void printMatchesLongLongInt(Node* matches)
     long long int remote_value;
 
     while (curr != nullptr) {
-        MATCH* match = curr->match;
-        if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
-            if (!(GetLastError() == 299))
-                printf("Error reading updated value of match: %llp\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+        const MATCH* match = curr->match;
+        if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, nullptr)) {
+            if (GetLastError() != 299)
+                printf("Error reading updated value of match: %p\nError id: %lu\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%llx Value: %lld\n", match->memblock_id, match->address, remote_value);
+        printf("\nMemblock ID: %d Address: 0x%p Value: %lld\n", match->memblock_id, match->address, remote_value);
 
         curr = curr->next;
     }
@@ -1429,7 +1432,7 @@ void printMatchesDouble(Node* matches)
     double remote_value;
 
     while (curr != nullptr) {
-        MATCH* match = curr->match;
+        const MATCH* match = curr->match;
         if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
             printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
@@ -1439,11 +1442,11 @@ void printMatchesDouble(Node* matches)
     }
 }
 
-void printInsights(MATCH* match)
+void printInsights(const MATCH* match)
 {
     if (match->isStatic) {
-        char* charAddr = (char*)match->address;
-        char* charBase = (char*)match->memblock->mbi.AllocationBase;
+        const char* charAddr = (char*)match->address;
+        const char* charBase = (char*)match->memblock->mbi.AllocationBase;
         ptrdiff_t offset = charAddr - charBase;
         printf("[+] Dynamic Address: %ls + 0x%x\n", getStringUse(match->memblock), offset);
     }
@@ -1471,5 +1474,7 @@ int getSizeForType(int dataType)
             return 4;
         case type_long_long_int:
             return 8;
+default: ;
     }
+    return 0;
 }
