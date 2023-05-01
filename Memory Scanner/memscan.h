@@ -21,6 +21,7 @@ typedef struct _MEMORYBLOCK {
 
 // enum for different data types for different types of pattern searches
 enum HUNTING_TYPE {
+    type_null = 0,
     type_byte,
     type_char,
     type_short,
@@ -38,6 +39,7 @@ typedef struct _MATCH {
     PVOID address;
     MBLOCK* memblock;
     HUNTING_TYPE type;
+    HUNTING_TYPE pointTotype;  // user supplied in saved addresses or known when doing pointerscan/map for saved address
 } MATCH;
 
 // for the sorted list of matches

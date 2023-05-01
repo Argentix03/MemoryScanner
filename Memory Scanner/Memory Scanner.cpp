@@ -329,6 +329,7 @@ Node* filterAddresses(MBLOCK* memlist, uintptr_t value, HUNTING_TYPE dataType, i
                     newMatch->memblock = mb;
                     newMatch->isStatic = isStatic;
                     newMatch->type = type;
+                    newMatch->pointTotype = type_null;
                     matches = insertMatch(newMatch, matches);
                 }
 
@@ -572,7 +573,7 @@ void mainMenuUI()
     int userChoice;
     while (true) {
         printf(
-            "Enter your choice:\n"
+            "\nEnter your choice:\n"
             "1: New Scan\n"
             "2: Quit\n"
         );
@@ -717,7 +718,7 @@ bool newScanUI()
     int userChoice;
     while (true) {
         printf(
-            "Enter your choice:\n"
+            "\nEnter your choice:\n"
             "1: Filter for addresses\n"
             "2: Print scan data\n"
             "3: Print scan data (debug)\n"
@@ -1165,6 +1166,7 @@ void printMatches(Node* matches)
     Node* curr = head;
     int size = sizeof(uintptr_t);
     uintptr_t remote_value;
+    int counter = 1;
 
     while (curr != nullptr) {
         const MATCH* match = curr->match;
@@ -1172,11 +1174,13 @@ void printMatches(Node* matches)
             if (GetLastError() != 299)
                 printf("Error reading updated value of match: %p\nError id: %lu\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%p ",
+        printf("\n%d. Memblock ID: %d Address: 0x%p ",
+            counter++,
             match->memblock_id,
             match->address
         );
-        switch (curr->match->type)
+        HUNTING_TYPE type = curr->match->type;
+        switch (type)
         {
         case type_byte:
             printf("Value: 0x%02x\n", remote_value);
@@ -1200,7 +1204,13 @@ void printMatches(Node* matches)
             printf("Value: %lld\n", remote_value);
             break;
         case type_pointer:
-            printf("Value: %p\n", remote_value);
+            if (curr->match->pointTotype != type_null) {
+                printf("Value: %p (P->", remote_value);
+                printValue(type, remote_value);
+                printf(")\n");
+            }
+            else
+                printf("Value: %p (Pointer)\n", remote_value);
             break;
         }
         printInsights(match);
@@ -1215,7 +1225,7 @@ void printInsights(const MATCH* match)
         const char* charAddr = (char*)match->address;
         const char* charBase = (char*)match->memblock->mbi.AllocationBase;
         ptrdiff_t offset = charAddr - charBase;
-        printf("[+] Dynamic Address: %ls + 0x%x\n", getStringUse(match->memblock), offset);
+        printf("    [+] Dynamic Address: %ls + 0x%x\n", getStringUse(match->memblock), offset);
     }
     // [+] check for ASLR disabled
     // [-] check for stack
