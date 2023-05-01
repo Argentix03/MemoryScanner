@@ -123,3 +123,6 @@ bool suspendTarget(HANDLE hProc, bool toggle);
 DWORD WINAPI shortcutHandler(LPVOID lpParam);
 char* getStringType(DWORD memType);
 void printInsights(const MATCH* match);
+void saveMatches(Node* matches);
+void savedMatchesUI();
+void mainMenuUI();

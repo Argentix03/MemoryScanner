@@ -30,6 +30,7 @@ bool writable_only;
 bool debug;
 int memblock_counter = 0;
 int shortcut_counter = 0;
+Node* g_savedMatches;
 HOTKEY* shortcuts[5];
 HANDLE hotkeysReadyEvent;
 CRITICAL_SECTION cs;
@@ -577,7 +578,16 @@ int main(int argc, char** argv)
         nullptr
     );                      
 
-    // main UI loop
+    // main UI loop - plan is to eventually seperate code into a library and a UI application
+    // but for now its way easier to test everything and come up with ideas for what is nice to have
+    // by using the UI so no point in seperating them yet
+    mainMenuUI();
+
+    return 0;
+}
+
+void mainMenuUI()
+{
     int userChoice;
     while (true) {
         printf(
@@ -600,11 +610,9 @@ int main(int argc, char** argv)
         }
         case 2:
             exit(0);
-		default: ;
+        default:;
         }
     }
-
-    return 0;
 }
 
 void printUsageAndExit()
@@ -733,7 +741,8 @@ bool newScanUI()
             "2: Print scan data\n"
             "3: Print scan data (debug)\n"
             "4: Configure shortcuts\n"
-            "5: Quit scan\n"
+            "5: View saved addresses\n"
+            "6: Quit scan\n"
         );
         scanf_s("%d", &userChoice);
 
@@ -765,6 +774,9 @@ bool newScanUI()
             configureHotkeyUI(scanData);
             break;
         case 5:
+            savedMatchesUI();
+            break;
+        case 6:
             closeScan(scanData);  
             return true; //back to main menu
             break;
@@ -772,6 +784,11 @@ bool newScanUI()
             printf("Invalid choice\n");
         }
     }
+}
+
+void savedMatchesUI()
+{
+    printMatches(type_pointer, g_savedMatches);
 }
 
 void configureHotkeyUI(MBLOCK* scanData)
@@ -961,24 +978,23 @@ void filterResultsUI(MBLOCK* scanData)
             return;
         case 2:
             charScanUI(scanData);
-            break;
+            return;
         case 3:
             shortScanUI(scanData);
-            break;
+            return;
         case 4:
             intScanUI(scanData);
             return;
         case 5:
         case 6:
             printf(NOT_IMPLEMENTED); // floating comparisons not yet implemented (using == atm)
-            break;
+            return;
         case 7:
             longIntScanUI(scanData);
-            break;
+            return;
         case 8:
             pointerScanUI(scanData);
-            printf(NOT_IMPLEMENTED);
-            break;
+            return;
         case 9:
             return;
         default:
@@ -1175,6 +1191,27 @@ void pointerScanUI(MBLOCK* scanData)
         printf("Filter more? (y/n): ");
         scanf_s(" %c", &repeat);
     }
+
+    char choice;
+    printf("Save matches? (y/n): ");
+    scanf_s(" %c", &choice);
+    if (choice == 'y')
+        saveMatches(matches);
+
+    return;
+}
+
+void saveMatches(Node* matches)
+{
+    MATCH* match;
+    while (matches) {
+        match = matches->match;
+        g_savedMatches = insertMatch(match, g_savedMatches);
+
+        matches = matches->next;
+    }
+
+    return;
 }
 
 // sorts by address. even though its mostly used in a sequential manner by a linear low to high memory region mapping so it comes sorted anyway.
