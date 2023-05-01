@@ -19,12 +19,25 @@ typedef struct _MEMORYBLOCK {
     struct _MEMORYBLOCK* next;
 } MBLOCK;
 
+// enum for different data types for different types of pattern searches
+enum HUNTING_TYPE {
+    type_byte,
+    type_char,
+    type_short,
+    type_int,
+    type_float,
+    type_double,
+    type_long_long_int,
+    type_pointer
+};
+
 // hold individual matches
 typedef struct _MATCH {
     int memblock_id;
     bool isStatic;
     PVOID address;
     MBLOCK* memblock;
+    HUNTING_TYPE type;
 } MATCH;
 
 // for the sorted list of matches
@@ -49,19 +62,6 @@ typedef struct _HOTKEY {
     HANDLE hProc;
     bool reset;
 } HOTKEY;
-
-
-// enum for different data types for different types of pattern searches
-enum HUNTING_TYPE {
-    type_byte,
-    type_char,
-    type_short,
-    type_int,
-    type_float,
-    type_double,
-    type_long_long_int,
-    type_pointer
-};
 
 // number of bytes for offset and pointer calculations
 enum DATASIZE {
@@ -95,9 +95,6 @@ void printMatchesWideChar(int length, Node* matches);
 Node* filterAddresses(MBLOCK* scanResults, uintptr_t value, int dataType, int data_len, Node* matches);
 const char* printValue(int dataType, uintptr_t value);
 int getSizeForType(int dataType);
-void printMatches(int dataType, Node* matches);
-void printMatchesInt(Node* matches);
-void printMatchesDouble(Node* matches);
 void freeMatches(Node* matches);
 Node* removeMatch(const MATCH* match, Node* matches);
 void printMemblock(MBLOCK* mb, bool print_memory);
@@ -112,11 +109,6 @@ void floatScanUI(MBLOCK* scanData);
 void wcharScanUI(MBLOCK* scanData);
 void shortScanUI(MBLOCK* scanData);
 void pointerScanUI(MBLOCK* scanData);
-void printMatchesPointer(Node* matches);
-void printMatchesByte(Node* matches);
-void printMatchesChar(Node* matches);
-void printMatchesShort(Node* matches);
-void printMatchesLongLongInt(Node* matches);
 void configureHotkeyUI(MBLOCK* scanData);
 void configureHotkey(int keyId, bool CTRL, bool ALT, bool SHIFT, SHORTCUT_TYPE type, HANDLE hProc);
 bool suspendTarget(HANDLE hProc, bool toggle);
@@ -126,3 +118,4 @@ void printInsights(const MATCH* match);
 void saveMatches(Node* matches);
 void savedMatchesUI();
 void mainMenuUI();
+void printMatches(Node* matches);
