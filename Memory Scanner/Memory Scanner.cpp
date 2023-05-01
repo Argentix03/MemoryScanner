@@ -1342,7 +1342,6 @@ void printMatchesByte(Node* matches)
     }
 }
 
-
 void printMatchesInt(Node* matches)
 {
     Node* head = matches;
@@ -1380,7 +1379,12 @@ void printMatchesChar(Node* matches)
             if (!(GetLastError() == 299))
                 printf("Error reading updated value of match: %pll\nError id: %lu\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%p Value: %c\n", match->memblock_id, match->address, remote_value);
+        printf("\nMemblock ID: %d Address: 0x%p Value: %c\n", 
+            match->memblock_id, 
+            match->address, 
+            remote_value
+        );
+        printInsights(match);
 
         curr = curr->next;
     }
@@ -1399,7 +1403,12 @@ void printMatchesShort(Node* matches)
             if (!(GetLastError() == 299))
                 printf("Error reading updated value of match: %llp\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%llx Value: %d\n", match->memblock_id, match->address, remote_value);
+        printf("\nMemblock ID: %d Address: 0x%llx Value: %d\n",
+            match->memblock_id, 
+            match->address, 
+            remote_value
+        );
+        printInsights(match);
 
         curr = curr->next;
     }
@@ -1418,7 +1427,12 @@ void printMatchesLongLongInt(Node* matches)
             if (GetLastError() != 299)
                 printf("Error reading updated value of match: %p\nError id: %lu\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%p Value: %lld\n", match->memblock_id, match->address, remote_value);
+        printf("\nMemblock ID: %d Address: 0x%p Value: %lld\n", 
+            match->memblock_id, 
+            match->address, 
+            remote_value
+        );
+        printInsights(match);
 
         curr = curr->next;
     }
@@ -1436,7 +1450,12 @@ void printMatchesDouble(Node* matches)
         if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, NULL)) {
             printf("Error reading updated value of match: %p\nError id: %d\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
         }
-        printf("\nMemblock ID: %d Address: 0x%llx Value: %f\n", match->memblock_id, match->address, remote_value);
+        printf("\nMemblock ID: %d Address: 0x%llx Value: %f\n", 
+            match->memblock_id, 
+            match->address, 
+            remote_value
+        );
+        printInsights(match);
 
         curr = curr->next;
     }
