@@ -7,6 +7,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Memory Scanner", "Memory Sc
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Test", "Test\Test.vcxproj", "{260E2A67-660C-455E-9138-FA39569E861B}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PlayersTests", "PlayersTests\PlayersTests.vcxproj", "{0CDB89E7-1E4B-4438-90FA-324014CCD825}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -31,6 +33,14 @@ Global
 		{260E2A67-660C-455E-9138-FA39569E861B}.Release|x64.Build.0 = Release|x64
 		{260E2A67-660C-455E-9138-FA39569E861B}.Release|x86.ActiveCfg = Release|Win32
 		{260E2A67-660C-455E-9138-FA39569E861B}.Release|x86.Build.0 = Release|Win32
+		{0CDB89E7-1E4B-4438-90FA-324014CCD825}.Debug|x64.ActiveCfg = Debug|x64
+		{0CDB89E7-1E4B-4438-90FA-324014CCD825}.Debug|x64.Build.0 = Debug|x64
+		{0CDB89E7-1E4B-4438-90FA-324014CCD825}.Debug|x86.ActiveCfg = Debug|Win32
+		{0CDB89E7-1E4B-4438-90FA-324014CCD825}.Debug|x86.Build.0 = Debug|Win32
+		{0CDB89E7-1E4B-4438-90FA-324014CCD825}.Release|x64.ActiveCfg = Release|x64
+		{0CDB89E7-1E4B-4438-90FA-324014CCD825}.Release|x64.Build.0 = Release|x64
+		{0CDB89E7-1E4B-4438-90FA-324014CCD825}.Release|x86.ActiveCfg = Release|Win32
+		{0CDB89E7-1E4B-4438-90FA-324014CCD825}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
