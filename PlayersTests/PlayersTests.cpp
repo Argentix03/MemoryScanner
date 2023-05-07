@@ -1,9 +1,11 @@
 #include <stdio.h>
 #include <Windows.h>
+#include <stddef.h>
 
 #define MAX_PLAYERS 10
 
 enum BuffType {
+    nullbuf = NULL,
     fire,
     frost,
     damageBoost,
@@ -17,14 +19,33 @@ enum ItemType {
     armour
 };
 
+enum Modifier {
+    doubleDamage,
+    doubleResistence,
+};
+
+enum SkillID {
+    Call_of_the_Forge_God,
+    Placidusax_Ruin,
+    Blessing_of_the_Erdtree
+};
+
+typedef struct Skill {
+    const char* name;
+    int id;
+    int level;
+    bool (*castSkill)(int);
+} Skill;
+
 typedef struct Item {
     const char* name;
     ItemType type;
     bool isEquipped;
     int quantity;
-    int activeBuff;
+    BuffType activeBuff;
     int damage;
     int defence;
+    Skill* activeSkill;
 } Item;
 
 typedef struct Slot {
@@ -38,6 +59,7 @@ typedef struct Player {
     int Mana;
     int Stamina;
     Slot slots[10];
+    Slot activeSlot;
     const char* name;
 } Player;
 
@@ -72,12 +94,17 @@ int main()
     hellblade->damage = 99;
     hellblade->type = weapon;
     hellblade->activeBuff = fire;
+    Skill weaponSkill;
+    weaponSkill.id = Call_of_the_Forge_God;
+    weaponSkill.level = 99;
+    weaponSkill.name = "Call of the Forge God";
+    hellblade->activeSkill = &weaponSkill;
 
     Item* healthpot = (Item*) malloc(sizeof(Item));
     healthpot->name = "Health Potion";
     healthpot->damage = NULL;
     healthpot->type = consumable;
-    healthpot->activeBuff = NULL;
+    healthpot->activeBuff = nullbuf;
     healthpot->quantity = 15;
 
 
@@ -147,6 +174,7 @@ int main()
     map->players[1] = p4;
     map->players[0]->HP = 1337;
     map->players[1]->HP = 1338;
+    map->players[2] = p1;
 
     // Print some info
     printPlayerInfo(p1);
@@ -183,8 +211,8 @@ int main()
     hit(p2, 200);
     hit(g_map.players[0], 100);
     hit(g_map.players[1], 200);
-    map->players[2] = p3;
-    map->players[3] = p4;
+    map->players[2] = p1;
+    map->players[3] = p2;
 
     printf("info p1:\n");
     printPlayerInfo(p1);
@@ -197,11 +225,36 @@ int main()
     printf("global g_map:\n");
     printMapInfo(g_map);
 
+    printf("Potential pointer path (Recurse 2):\n"
+        "(Heap) map: %p + [offset 0x%x] -> players: %p + [offset 0x%x] *-> player: %p + [offset 0x%x] -> HP %p\n"
+        "map->players[1]->HP\n",
+        map, offsetof(Map, players), map->players, sizeof(Player)*1, map->players[1], offsetof(Player, HP), &(map->players[1]->HP)
+    );
+
+    printf("Potential pointer path (Recurse 2):\n"
+        "(Global) map: %p + [offset 0x%x] -> players: %p + [offset 0x%x] *-> player: %p + [offset 0x%x] -> HP %p\n"
+        "map->players[1]->HP\n",
+        g_map, offsetof(Map, players), g_map.players, sizeof(Player) * 1, g_map.players[1], offsetof(Player, HP), &(g_map.players[1]->HP)
+    );
+
+    printf("Potential pointer path (Recurse 4):\n"
+        "(Heap) map: %p + [offset 0x%x] -> players: %p + [offset 0x%x] *-> player: %p + [offset 0x%x] -> slots %p + [offset 0x%x] *-> item in slot: %p + [offset 0x%x] *-> item skill: %p + [offset 0x%x] *-> skill identifier: %p\n"
+        "map->players[2]->slots[1].item->activeSkill->id\n",
+        map, offsetof(Map, players), map->players, sizeof(Player) * 2, map->players[2], offsetof(Player, slots), map->players[2]->slots, sizeof(Slot) * 1, map->players[2]->slots[1].item, offsetof(Item, activeSkill), map->players[2]->slots[1].item->activeSkill, offsetof(Skill, id), map->players[2]->slots[1].item->activeSkill->id
+    );
+
+    system("pause");
+
     return 0;
 }
 
 void hit(Player* p, int dmg)
 {
+    if (!p) {
+        printf("nullplayer\n");
+        return;
+    }
+
     p->HP -= dmg;
 }
 
@@ -225,14 +278,20 @@ void printPlayerInfo(Player* p)
 
 void printMapInfoPtr(Map* m)
 {
-    if (!m)
+    if (!m) {
+        printf("Nullmap\n");
         return;
+    }
+        
 
+    printf("Map addr: %p\n", m);
     printf("Map visisble: %s\n", m->visible ? "True" : "False");
     printf("Players:\n");
     for (int i = 0; i < MAX_PLAYERS; ++i) {
-        if (!m->players[i])
+        if (!m->players[i]) {
+            printf("Nullplayer\n");
             return;
+        }
 
         printPlayerInfo(m->players[i]);
     }
@@ -240,12 +299,23 @@ void printMapInfoPtr(Map* m)
 
 void printMapInfo(Map m)
 {
+    printf("Map addr (probably stack local for this fn): %p\n", &m);
     printf("Map visisble: %s\n", m.visible ? "True" : "False");
     printf("Players:\n");
     for (int i = 0; i < MAX_PLAYERS; ++i) {
-        if (!m.players[i])
-            return;
-
         printPlayerInfo(m.players[i]);
     }
+}
+
+bool castSkill(int skillID)
+{
+    switch (skillID)
+    {
+    case 1:
+        return true;
+    case 2:
+        return true;
+    }
+
+    return false;
 }

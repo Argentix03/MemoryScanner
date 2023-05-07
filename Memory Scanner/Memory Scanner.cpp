@@ -30,6 +30,7 @@ bool writable_only;
 bool debug;
 int memblock_counter = 0;
 int shortcut_counter = 0;
+long long int matchCounter = 0;
 Node* g_savedMatches;
 HOTKEY* shortcuts[5];
 HANDLE hotkeysReadyEvent;
@@ -217,10 +218,10 @@ Node* filterAddresses(MBLOCK* memlist, uintptr_t value, HUNTING_TYPE dataType, i
 {
     bool matched = 0;
 
-    if (memlist)
-        printf("searching for value: ");
-    else
-        printf("filtering matches for value: ");
+    //if (memlist)
+    //    printf("searching for value: ");
+    //else
+    //    printf("filtering matches for value: ");
     printValue(dataType, value);
     putchar('\n');
 
@@ -324,6 +325,8 @@ Node* filterAddresses(MBLOCK* memlist, uintptr_t value, HUNTING_TYPE dataType, i
                     long long int offset = membyte - (long long int) (mb->buffer);
                     long long int remote_address = (long long int) mb->addr + offset;
                     const bool isStatic = StrCmpW(L"", getStringUse(mb));
+                    long long id = matchCounter++;
+                    newMatch->id;
                     newMatch->address = (PVOID)remote_address;
                     newMatch->memblock_id = mb->id;
                     newMatch->memblock = mb;
@@ -756,7 +759,7 @@ bool newScanUI()
             configureHotkeyUI(scanData);
             break;
         case 5:
-            savedMatchesUI();
+            savedMatchesUI(scanData);
             break;
         case 6:
             closeScan(scanData);  
@@ -768,11 +771,99 @@ bool newScanUI()
     }
 }
 
-void savedMatchesUI()
+void savedMatchesUI(MBLOCK* scanData)
 {
     // Later add the interaction here like Freeze/Unfreeze, Trace Access, etc.
     printf("Saved addresses: %d\n", countMatches(g_savedMatches));
     printMatches(g_savedMatches);
+    
+    int userChoice;
+    while (true) {
+        printf(
+            "\nEnter your choice:\n"
+            "1: Write value to address\n"
+            "2: Freeze address\n"
+            "3: Generate pointermap for address\n"
+            "4: Trace address\n"
+            "5: Back\n"
+        );
+        scanf_s("%d", &userChoice);
+    
+        switch (userChoice)
+        {
+        case 1:
+            printf(NOT_IMPLEMENTED);
+            break;
+        case 2:
+            printf(NOT_IMPLEMENTED);
+            break;
+        case 3:
+            pointermapUI(scanData);
+            break;
+        case 4:
+            printf(NOT_IMPLEMENTED);
+            break;
+        case 5:
+            return;
+            break;
+        default:
+            printf("Invalid choice\n");
+        }
+    }
+
+    return;
+}
+
+void pointermapUI(MBLOCK* scanData)
+{
+    int matchChoice;
+    int recurseLevel = 3;
+    printf("Select address (number): ");
+    scanf_s("%d", &matchChoice);
+    const MATCH* match = getMatchByPrintOrder(g_savedMatches, matchChoice);
+    if (!pointermapScan(scanData, match, recurseLevel))
+        printf("Something went wrong.\n");
+
+    return;
+}
+
+bool pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLevel)
+{
+    if (recurseLevel <= 0)
+        return true;
+
+    int guessSize = 100;
+    Node* matches = nullptr;
+    uintptr_t address = (uintptr_t) match->address;
+    int offset = 0;
+    for (offset = 0; offset < guessSize; offset++) {
+        // scan down till pointer found and consider it to be base of some struct/object and stop there
+        address--;
+        matches = filterAddresses(scanData, (uintptr_t)address, type_pointer, 1, matches);
+
+        // keep going down untill find a match
+        int matchCount = countMatches(matches);
+        if (matchCount <= 0)
+            continue;
+        else {
+            printf("Matches found: %d\n", matchCount);
+            printMatches(matches);
+            break;
+        }
+    }
+
+    // PointerPath add
+
+    // Recurse one level down for match
+    Node* tmpMatches = matches;
+    while (tmpMatches) {
+        match = tmpMatches->match;
+        pointermapScan(scanData, match, recurseLevel - 1);
+
+        tmpMatches = tmpMatches->next;
+    }
+
+    return true;
 }
 
 void configureHotkeyUI(MBLOCK* scanData)
@@ -1019,7 +1110,7 @@ void scanUI(MBLOCK* scanData, HUNTING_TYPE type)
     int matchCount = 0;
     Node* matches = nullptr;
 
-    value = getUserInputForTypeUI(type);
+    value = getUserInputForTypeUI(type);   
     matches = filterAddresses(scanData, value, type, 1, matches);
     printMatches(matches);
 
@@ -1157,6 +1248,27 @@ void printMatchesWideChar(int length, Node* matches) {
 
         curr = curr->next;
     }
+}
+
+// mirror iteration of printMatches for UI selection after print
+const MATCH* getMatchByPrintOrder(Node* matches, int selection)
+{
+    Node* head = matches;
+    Node* curr = head;
+    int size = sizeof(uintptr_t);
+    uintptr_t remote_value;
+    int counter = 1;
+
+    while (curr != nullptr) {
+        const MATCH* match = curr->match;
+        if (counter == selection)
+            return match;
+        counter++;
+
+        curr = curr->next;
+    }
+
+    return nullptr;
 }
 
 // generic print for any non-string matches

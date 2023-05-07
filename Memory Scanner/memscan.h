@@ -34,6 +34,7 @@ enum HUNTING_TYPE {
 
 // hold individual matches
 typedef struct _MATCH {
+    long long int id;
     int memblock_id;
     bool isStatic;
     PVOID address;
@@ -46,6 +47,13 @@ typedef struct _MATCH {
 struct Node {
     MATCH* match;
     Node* next;
+};
+
+// for the pointer paths
+struct PointerPath {
+    MATCH* match;
+    int offset;
+    PointerPath* next;
 };
 
 // enum for various shortcuts
@@ -118,9 +126,12 @@ DWORD WINAPI shortcutHandler(LPVOID lpParam);
 char* getStringType(DWORD memType);
 void printInsights(const MATCH* match);
 void saveMatches(Node* matches);
-void savedMatchesUI();
+void savedMatchesUI(MBLOCK* scanData);
 void mainMenuUI();
 void printMatches(Node* matches);
 void scanUI(MBLOCK* scanData, HUNTING_TYPE type);
 uintptr_t getUserInputForTypeUI(HUNTING_TYPE type);
 int countMatches(const Node* matches);
+bool pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLevel);
+const MATCH* getMatchByPrintOrder(Node* matches, int selection);
+void pointermapUI(MBLOCK* scanData);
