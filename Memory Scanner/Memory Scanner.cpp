@@ -8,10 +8,11 @@
 //      6. save matches
 //      7. hotkey to pause/resume target process
 //      8. extended information on modules and relative/static addresses and commit types. Add 'use' for mapped/image.
-//  TODO:
 //      9. pointermaps!!
+//  TODO:
 //      10. tracing aka 'find what access/writes to this address'???
-//      11. bonus: generic speedhack (hook game ticks to fake time). ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
+//      11. freeze/unfreeze values. continious WPM is enough for basic prodding on a value from the tool. Elaborate freezes left for specific hacks. 
+//      12. bonus: generic speedhack (hook game ticks to fake time). ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
 
 #include <Windows.h>
 #include <Psapi.h>
