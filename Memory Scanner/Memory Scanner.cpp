@@ -1117,8 +1117,7 @@ void scanUI(MBLOCK* scanData, HUNTING_TYPE type)
     printf("Next Filter? (y/n): ");
     scanf_s(" %c", &repeat);
     while (repeat == 'y') {
-        printf("Enter value: ");
-        scanf_s("%llx", &value);
+        value = getUserInputForTypeUI(type);
         matches = filterAddresses(nullptr, value, type, 1, matches);
         matchCount = countMatches(matches);
         printf("Matches found: %d\n", matchCount);
