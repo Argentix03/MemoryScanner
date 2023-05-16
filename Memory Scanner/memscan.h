@@ -142,3 +142,4 @@ PointerMap* pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLeve
 const MATCH* getMatchByPrintOrder(Node* matches, int selection);
 void pointermapUI(MBLOCK* scanData);
 void printPointermap(PointerMap* pointermap);
+void printMatch(const MATCH* match);

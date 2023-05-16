@@ -702,16 +702,16 @@ bool newScanUI()
     printf("Starting scan\n");
     MBLOCK* scanData = startScan(pid);
 
-    WCHAR imageName[MAX_PATH];
-    WCHAR imagePath[MAX_PATH];
-    constexpr DWORD dwSize = sizeof(imagePath);
-    GetModuleFileNameEx(scanData->hProc, nullptr, imagePath, dwSize);
-     if (!scanData) {
+    if (!scanData) {
         // implement more logic here. eg. insufficient permission to get handle, tell user to run as admin etc.
         printf("Scan failed\n");
         return false;
     }
 
+    WCHAR imageName[MAX_PATH];
+    WCHAR imagePath[MAX_PATH];
+    constexpr DWORD dwSize = sizeof(imagePath);
+    GetModuleFileNameEx(scanData->hProc, nullptr, imagePath, dwSize);
     WCHAR* processName = PathFindFileName(imagePath);
     printf("Process: %ls\n", processName);
     printf("Image path: %ls\n", imagePath);
@@ -823,7 +823,7 @@ void pointermapUI(MBLOCK* scanData)
     const MATCH* match = getMatchByPrintOrder(g_savedMatches, matchChoice);
     PointerMap* pointermap = nullptr;
     pointermap = pointermapScan(scanData, match, recurseLevel, nullptr, nullptr);
-    if(!pointermap)
+    if(!pointermap->pathHead)
         printf("No results for pointermap.\n");
     else
         printPointermap(pointermap);
@@ -836,11 +836,15 @@ void printPointermap(PointerMap* pointermap)
     int count = 0;
     int offset = 0;
     PointerPath* path;
-    while (pointermap) {
+    PointerMap* tmp;
+
+    // Simple print
+    printf("\n==Simple print==\n");
+    tmp = pointermap;
+    while (tmp) {
         count++;
         offset = 0;
-        path = pointermap->pathHead;
-
+        path = tmp->pathHead;
         printf("%d:\tAddress: ", count);
         while (path) {
             if (offset != 0)
@@ -849,17 +853,59 @@ void printPointermap(PointerMap* pointermap)
 
             offset = path->offset;
 
-            if (!path->next)
+            if (!path->next) {
+                if (offset != 0)
+                    printf("[+ 0x%x] ", offset);
                 printf("(target)\n");
+            }
+
             path = path->next;
         }
 
-        pointermap = pointermap->next;
+        tmp = tmp->next;
+    }
+
+    // Informatic print
+    printf("\n==Informatic print==\n");
+    count = 1;
+    tmp = pointermap;
+    while (tmp) {
+        path = tmp->pathHead;
+        printf("\n==%d==\n", count++);
+
+        while (path) {
+            printMatch(path->match);
+            printInsights(path->match);
+            if (path->next) {
+                if (offset != 0)
+                    printf("    |\n     --> [+ 0x%x] = (0x%p)\n", path->offset, path->next->match->address);
+            }
+            else {
+                int size = sizeof(uintptr_t);
+                uintptr_t remote_value;
+                if (!ReadProcessMemory(path->match->memblock->hProc, path->match->address, &remote_value, size, nullptr)) {
+                    if (GetLastError() != 299)
+                        printf("Error reading updated value of match: %p\nError id: %lu\nError msg: %ls\n", path->match->address, GetLastError(), getLastErrorStr());
+                }
+                if (offset != 0) {
+                    printf("    [+ 0x%x] = (0x%p)\n", path->offset, remote_value + path->offset);
+                }
+                    
+                printf("\t\t^^ target ^^\n");
+            }
+                
+            path = path->next;
+        }
+
+        tmp = tmp->next;
     }
 
     return;
 }
 
+
+// Return a pointermap containing all pointer paths found. Empty pointermap if no results.
+// Pointermap returned is a pointer to the head node in a linked-list of PointerMap each containing the head node to a linked-list of PointerPath
 PointerMap* pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLevel, PointerPath* pathNode, PointerMap* pointermap)
 {
     // scan down till pointer found and consider it to be base of some struct/object and stop there
@@ -1328,59 +1374,69 @@ void printMatches(Node* matches)
 {
     Node* head = matches;
     Node* curr = head;
-    int size = sizeof(uintptr_t);
-    uintptr_t remote_value;
     int counter = 1;
 
     while (curr != nullptr) {
         const MATCH* match = curr->match;
-        if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, nullptr)) {
-            if (GetLastError() != 299)
-                printf("Error reading updated value of match: %p\nError id: %lu\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
-        }
-        printf("\n%d. Memblock ID: %d Address: 0x%p ",
-            counter++,
-            match->memblock_id,
-            match->address
-        );
-        HUNTING_TYPE type = curr->match->type;
-        switch (type)
-        {
-        case type_byte:
-            printf("Value: 0x%02x\n", remote_value);
-            break;
-        case type_char:
-            printf("Value: %c\n", remote_value);
-            break;
-        case type_short:
-            printf("Value: %d\n", remote_value);
-            break;
-        case type_int:
-            printf("Value: %d\n", remote_value);
-            break;
-        case type_float:
-            printf("Value: %f\n", remote_value);
-            break;
-        case type_double:
-            printf("Value: %lf\n", remote_value);
-            break;
-        case type_long_long_int:
-            printf("Value: %lld\n", remote_value);
-            break;
-        case type_pointer:
-            if (curr->match->pointTotype != type_null) {
-                printf("Value: %p (P->", remote_value);
-                printValue(type, remote_value);
-                printf(")\n");
-            }
-            else
-                printf("Value: %p (Pointer)\n", remote_value);
-            break;
-        }
+        printf("%d. ", counter++);
+        printMatch(match);
         printInsights(match);
 
         curr = curr->next;
     }
+
+    return;
+}
+
+void printMatch(const MATCH* match)
+{
+    int size = sizeof(uintptr_t);
+    uintptr_t remote_value;
+
+    if (!ReadProcessMemory(match->memblock->hProc, match->address, &remote_value, size, nullptr)) {
+        if (GetLastError() != 299)
+            printf("Error reading updated value of match: %p\nError id: %lu\nError msg: %ls\n", match->address, GetLastError(), getLastErrorStr());
+    }
+    printf("Memblock ID: %d Address: 0x%p ",
+        match->memblock_id,
+        match->address
+    );
+    HUNTING_TYPE type = match->type;
+    switch (type)
+    {
+    case type_byte:
+        printf("Value: 0x%02x\n", remote_value);
+        break;
+    case type_char:
+        printf("Value: %c\n", remote_value);
+        break;
+    case type_short:
+        printf("Value: %d\n", remote_value);
+        break;
+    case type_int:
+        printf("Value: %d\n", remote_value);
+        break;
+    case type_float:
+        printf("Value: %f\n", remote_value);
+        break;
+    case type_double:
+        printf("Value: %lf\n", remote_value);
+        break;
+    case type_long_long_int:
+        printf("Value: %lld\n", remote_value);
+        break;
+    case type_pointer:
+        if (match->pointTotype != type_null) {
+            printf("Value: %p (P->", remote_value);
+            printValue(type, remote_value);
+            printf(")\n");
+        }
+        else
+            printf("Value: %p (Pointer)\n", remote_value);
+        break;
+    }
+
+    return;
 }
 
 void printInsights(const MATCH* match)
