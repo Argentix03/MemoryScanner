@@ -51,9 +51,15 @@ struct Node {
 
 // for the pointer paths
 struct PointerPath {
-    MATCH* match;
+    const MATCH* match;
     int offset;
     PointerPath* next;
+};
+
+// for the pointer maps
+struct PointerMap {
+    PointerPath* pathHead;
+    PointerMap* next;
 };
 
 // enum for various shortcuts
@@ -132,6 +138,7 @@ void printMatches(Node* matches);
 void scanUI(MBLOCK* scanData, HUNTING_TYPE type);
 uintptr_t getUserInputForTypeUI(HUNTING_TYPE type);
 int countMatches(const Node* matches);
-bool pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLevel);
+PointerMap* pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLevel, PointerPath* pathNode, PointerMap* pathList);
 const MATCH* getMatchByPrintOrder(Node* matches, int selection);
 void pointermapUI(MBLOCK* scanData);
+void printPointermap(PointerMap* pointermap);

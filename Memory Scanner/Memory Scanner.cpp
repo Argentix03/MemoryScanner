@@ -222,8 +222,8 @@ Node* filterAddresses(MBLOCK* memlist, uintptr_t value, HUNTING_TYPE dataType, i
     //    printf("searching for value: ");
     //else
     //    printf("filtering matches for value: ");
-    printValue(dataType, value);
-    putchar('\n');
+    //printValue(dataType, value);
+    //putchar('\n');
 
     // filter on given matches
     if (!memlist) {
@@ -821,49 +821,102 @@ void pointermapUI(MBLOCK* scanData)
     printf("Select address (number): ");
     scanf_s("%d", &matchChoice);
     const MATCH* match = getMatchByPrintOrder(g_savedMatches, matchChoice);
-    if (!pointermapScan(scanData, match, recurseLevel))
-        printf("Something went wrong.\n");
+    PointerMap* pointermap = nullptr;
+    pointermap = pointermapScan(scanData, match, recurseLevel, nullptr, nullptr);
+    if(!pointermap)
+        printf("No results for pointermap.\n");
+    else
+        printPointermap(pointermap);
 
     return;
 }
 
-bool pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLevel)
+void printPointermap(PointerMap* pointermap)
 {
-    if (recurseLevel <= 0)
-        return true;
+    int count = 0;
+    int offset = 0;
+    PointerPath* path;
+    while (pointermap) {
+        count++;
+        offset = 0;
+        path = pointermap->pathHead;
 
+        printf("%d:\tAddress: ", count);
+        while (path) {
+            if (offset != 0)
+                printf("[+ 0x%x] ", offset);
+            printf("%p -> ", path->match->address);
+
+            offset = path->offset;
+
+            if (!path->next)
+                printf("(target)\n");
+            path = path->next;
+        }
+
+        pointermap = pointermap->next;
+    }
+
+    return;
+}
+
+PointerMap* pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLevel, PointerPath* pathNode, PointerMap* pointermap)
+{
+    // scan down till pointer found and consider it to be base of some struct/object and stop there
+    if (recurseLevel <= 0)
+        return pointermap;
+
+    // create a new pointermap if one was not created yet
+    if (!pointermap) {
+        pointermap = (PointerMap*)malloc(sizeof(PointerMap));
+        pointermap->pathHead = nullptr;
+        pointermap->next = nullptr;
+    }
+        
     int guessSize = 100;
     Node* matches = nullptr;
     uintptr_t address = (uintptr_t) match->address;
     int offset = 0;
     for (offset = 0; offset < guessSize; offset++) {
-        // scan down till pointer found and consider it to be base of some struct/object and stop there
-        address--;
-        matches = filterAddresses(scanData, (uintptr_t)address, type_pointer, 1, matches);
-
         // keep going down untill find a match
+        matches = filterAddresses(scanData, (uintptr_t)address, type_pointer, 1, matches);
+        address--;
         int matchCount = countMatches(matches);
         if (matchCount <= 0)
             continue;
         else {
-            printf("Matches found: %d\n", matchCount);
-            printMatches(matches);
+            // Treat this as the beginning of a struct and stop here (wrong assumption but works decently)
+            //printf("Matches found: %d\n", matchCount);
+            //printMatches(matches);
             break;
         }
     }
 
     // PointerPath add
-
     // Recurse one level down for match
     Node* tmpMatches = matches;
     while (tmpMatches) {
         match = tmpMatches->match;
-        pointermapScan(scanData, match, recurseLevel - 1);
+        PointerPath* newPathNode = (PointerPath*)malloc(sizeof(PointerPath));
+        newPathNode->match = match;
+        newPathNode->offset = offset;
+        newPathNode->next = pathNode;
+        if (!pointermap->pathHead) {
+            pointermap->pathHead = newPathNode;
+        }
+        else {
+            PointerMap* tmp = (PointerMap*)malloc(sizeof(PointerMap));
+            tmp->pathHead = newPathNode;
+            tmp->next = pointermap;
+            pointermap = tmp;
+        }
+        
+        pointermap = pointermapScan(scanData, match, recurseLevel - 1, newPathNode, pointermap);
 
         tmpMatches = tmpMatches->next;
     }
 
-    return true;
+    return pointermap;
 }
 
 void configureHotkeyUI(MBLOCK* scanData)
