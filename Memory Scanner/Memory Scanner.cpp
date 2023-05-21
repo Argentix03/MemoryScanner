@@ -1,18 +1,10 @@
 //  Memscan - A memory scanner
-//  DONE:
-//      1. create structs and linked list and stuff to hold memory matches and metadata
-//      2. map memory protections and allocation state + parse memory regions into memblocks 
-//      3. core search logic
-//      4. filtering aka 'next scan'.
-//      5. scans for other data types.
-//      6. save matches
-//      7. hotkey to pause/resume target process
-//      8. extended information on modules and relative/static addresses and commit types. Add 'use' for mapped/image.
-//      9. pointermaps!!
-//  TODO:
-//      10. tracing aka 'find what access/writes to this address'???
-//      11. freeze/unfreeze values. continious WPM is enough for basic prodding on a value from the tool. Elaborate freezes left for specific hacks. 
-//      12. bonus: generic speedhack (hook game ticks to fake time). ex: https://github.com/onethawt/speedhack/blob/master/SpeedHack.cpp
+//  
+//  Where was I: 
+//  Finished making a WPM loop and for 'freeze' and it works well on small program. wanted to see if it works on elden ring and whats the right timing.
+//  for now its set for 16ms which should be around 60 fps so im expecting 50/50 battle with the GUI when testing on the UI address for xp.
+//  was gonna implement a singlular wpm that will support all data sizes so it doesnt cause memory corruption for overwriting bigger than intened values.
+//  and use that also for option 'write to address' in the UI.
 
 #include <Windows.h>
 #include <Psapi.h>
@@ -21,6 +13,7 @@
 #include "memscan.h"
 #include <conio.h>
 #include <winternl.h>
+#include <unordered_set>  // fkin tired of linked lists
 #pragma comment(lib, "Shlwapi.lib")
 
 // globals
@@ -35,11 +28,14 @@ long long int matchCounter = 0;
 Node* g_savedMatches;
 HOTKEY* shortcuts[5];
 HANDLE hotkeysReadyEvent;
+HANDLE freezeEvent;
+HANDLE unfreezeEvent;
 CRITICAL_SECTION cs;
+CRITICAL_SECTION csFreezer;
 
 // add commit type (mapped/image/private)
 // Convert MEMORY_BASIC_INFORMATION.Protect into comfy string representation.
-// Return a pointer to a newly allocated string.
+// Return a pointer to a newly allocated string (that will probably never be freed).
 char* getStringProtection(DWORD protection)
 {
     // Constants defined as DWORD in winnt.h, more information can be found at:
@@ -334,6 +330,7 @@ Node* filterAddresses(MBLOCK* memlist, uintptr_t value, HUNTING_TYPE dataType, i
                     newMatch->isStatic = isStatic;
                     newMatch->type = type;
                     newMatch->pointTotype = type_null;
+                    newMatch->freeze = nullptr;
                     matches = insertMatch(newMatch, matches);
                 }
 
@@ -430,7 +427,7 @@ void freeMemBlock(const MBLOCK* mb)
     }
 }
 
-// starts a scan. currently no filters implemented. scans through a full process' (committed) memory.
+// starts a scan. scans through a full process' (committed) memory.
 // returns memlist - first member of the linked-list of memblocks created in the scan.
 MBLOCK* startScan(int pid)
 {
@@ -438,8 +435,10 @@ MBLOCK* startScan(int pid)
     MEMORY_BASIC_INFORMATION mbi;
     PVOID addr = 0;
     memblock_counter = 0; // reset the memblock counter as no more than 1 scan at a time is supported for now
+    // Reason it is not PROCESS_ALL_ACCESS because i like to learn about memory access in windows from access denied errors
+    DWORD dwDesiredAccess = PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | PROCESS_SUSPEND_RESUME | PROCESS_VM_WRITE;
 
-    HANDLE hProc = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | PROCESS_SUSPEND_RESUME, false, pid);
+    HANDLE hProc = OpenProcess(dwDesiredAccess, false, pid);
     if (!hProc) {
         printf("Error open process handle: %d\n%ws\n", GetLastError(), getLastErrorStr());
         return nullptr;
@@ -553,16 +552,16 @@ int main(int argc, char** argv)
             debug = true;
     }
 
-    // listener and handler for shortcuts
+    // listener and handler for shortcuts 
     InitializeCriticalSection(&cs);
     HANDLE hThread = CreateThread(
-	    nullptr,               // default security attributes
+	    nullptr,            // default security attributes
         0,                  // use default stack size  
         shortcutHandler,    // thread function name
         shortcuts,          // argument to thread function 
         0,                  // use default creation flags
         nullptr
-    );                      
+    );
 
     // main UI loop - plan is to eventually seperate code into a library and a UI application
     // but for now its way easier to test everything and come up with ideas for what is nice to have
@@ -606,6 +605,39 @@ void printUsageAndExit()
     printf("Usage: memscan.exe <-pid PID> [-writable_mem] [-debug]\n");
     printf("Example: memscan.exe -pid 1785 -writable_mem -debug\n");
     exit(1);
+}
+
+// takes pointer to allocated struct with address and action
+DWORD WINAPI freezeHandler(LPVOID lpFreezeRequest)
+{
+    // How fast to spam WPM
+    int msWait = 16;  // 60 FPS
+    FreezeRequest* fr = (FreezeRequest*)lpFreezeRequest;
+    DWORD waitResult;
+    
+    // Loop spam WPM breaks on unfreeze signal
+    while (true) {
+
+        // Override address with value
+        // Functionilize this for a single write and make sure to handle all data types!!
+        uintptr_t value = fr->value;  // for now this corrupts the stack when written on a small stack variable (with the size of uintptr_t)
+        if (!WriteProcessMemory(fr->hProc, (LPVOID) fr->address, &value, sizeof(value), nullptr)) {
+                printf("Error writing value 0x%x to address: %lp\nError id: %lu\nError msg: %ls\n", fr->value, fr->address, GetLastError(), getLastErrorStr());
+        }
+
+        // Check for unfreeze (also count as the sleep to throttle some WPM spam)
+        waitResult = WaitForSingleObject(fr->unfreeze_event, msWait);
+        if (waitResult == WAIT_TIMEOUT)
+            continue;
+        else if (waitResult == WAIT_OBJECT_0) // Unfreeze was signled
+            break; 
+        else {
+            printf("Unexpected results from WaitForSingleObject: 0x%x\nError id: %d\nError msg: %ls\n", waitResult, GetLastError(), getLastErrorStr());
+            break;
+        }
+    }
+
+    return 1;
 }
 
 DWORD WINAPI shortcutHandler(LPVOID lpParam)
@@ -774,7 +806,6 @@ bool newScanUI()
 
 void savedMatchesUI(MBLOCK* scanData)
 {
-    // Later add the interaction here like Freeze/Unfreeze, Trace Access, etc.
     printf("Saved addresses: %d\n", countMatches(g_savedMatches));
     printMatches(g_savedMatches);
     
@@ -783,10 +814,11 @@ void savedMatchesUI(MBLOCK* scanData)
         printf(
             "\nEnter your choice:\n"
             "1: Write value to address\n"
-            "2: Freeze address\n"
+            "2: Freeze/Unfreeze address\n"
             "3: Generate pointermap for address\n"
             "4: Trace address\n"
-            "5: Back\n"
+            "5: Print saved addresses\n"
+            "6: Back\n"
         );
         scanf_s("%d", &userChoice);
     
@@ -796,7 +828,7 @@ void savedMatchesUI(MBLOCK* scanData)
             printf(NOT_IMPLEMENTED);
             break;
         case 2:
-            printf(NOT_IMPLEMENTED);
+            freezeAddressUI();
             break;
         case 3:
             pointermapUI(scanData);
@@ -805,6 +837,10 @@ void savedMatchesUI(MBLOCK* scanData)
             printf(NOT_IMPLEMENTED);
             break;
         case 5:
+            printf("Saved addresses: %d\n", countMatches(g_savedMatches));
+            printMatches(g_savedMatches);
+            break;
+        case 6:
             return;
             break;
         default:
@@ -815,15 +851,105 @@ void savedMatchesUI(MBLOCK* scanData)
     return;
 }
 
+void freezeAddressUI()
+{
+    // select match
+    int matchChoice;
+    printf("Select address (number): ");
+    scanf_s("%d", &matchChoice);
+    MATCH* match = getMatchByPrintOrder(g_savedMatches, matchChoice);
+    FreezeRequest* fr;
+    uintptr_t value;
+
+    int userChoice;
+    while (true) {
+        printf(
+            "\nEnter your choice:\n"
+            "1: Freeze address\n"
+            "2: Unfreeze address\n"
+        );
+        scanf_s("%d", &userChoice);
+
+        switch (userChoice)
+        {
+        case 1:
+            // check if match is already frozen
+            if (match->freeze) {
+                printf("address is already frozen\n");
+            }
+            else {
+                // freeze match
+                fr = freezeAddress(match, getUserInputForTypeUI(match->type));
+                match->freeze = fr;
+                printf("address frozen\n");
+            }
+            return;
+        case 2:
+            unfreezeAddress(match);
+            printf("address unfrozen\n");
+            return;
+        default:
+            printf("Invalid choice\n");
+        }
+    }
+
+    return;
+}
+
+FreezeRequest* freezeAddress(const MATCH* match, uintptr_t value)
+{
+    // create freezer thread (which also does the deallocation)
+    FreezeRequest* fr = (FreezeRequest*)malloc(sizeof(FreezeRequest));
+    fr->action = action_freeze;
+    fr->address = (uintptr_t) match->address;
+    fr->value = value;
+    fr->hProc = match->memblock->hProc;
+    fr->unfreeze_event = CreateEvent(NULL, false, false, NULL);
+
+    // Start the thread
+    HANDLE hThread = CreateThread(
+        nullptr,            // default security attributes
+        0,                  // use default stack size  
+        freezeHandler,      // thread function name
+        (LPVOID)fr,         // argument to thread function 
+        0,                  // use default creation flags
+        nullptr
+    );
+
+    // return the FreezeRequest which can be used to unfreeze
+    return fr; 
+}
+
+// Signals freeze handler thread to stop spamming wpm
+void unfreezeAddress(MATCH* match)
+{
+    if (!match->freeze) {
+        printf("Address was not frozen\n");
+    }
+    else if (!SetEvent(match->freeze->unfreeze_event))
+    {
+        printf("SetEvent failed (%d)\n", GetLastError());
+        return;
+    }
+    
+    // change state of match to not frozen and free FreezeRequest
+    free(match->freeze);
+    match->freeze = nullptr;
+
+    return;
+}
+
 void pointermapUI(MBLOCK* scanData)
 {
     int matchChoice;
-    int recurseLevel = 3;
+    int recurseLevel = 3;  // reminder to play around with higher recurse levels
     printf("Select address (number): ");
     scanf_s("%d", &matchChoice);
     const MATCH* match = getMatchByPrintOrder(g_savedMatches, matchChoice);
     PointerMap* pointermap = nullptr;
-    pointermap = pointermapScan(scanData, match, recurseLevel, nullptr, nullptr);
+    std::unordered_set<uintptr_t> visitedAddresses;
+    pointermap = pointermapScan(scanData, match, recurseLevel, nullptr, nullptr, visitedAddresses);
+    visitedAddresses.clear();
     if(!pointermap->pathHead)
         printf("No results for pointermap.\n");
     else
@@ -907,7 +1033,7 @@ void printPointermap(PointerMap* pointermap)
 
 // Return a pointermap containing all pointer paths found. Empty pointermap if no results.
 // Pointermap returned is a pointer to the head node in a linked-list of PointerMap each containing the head node to a linked-list of PointerPath
-PointerMap* pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLevel, PointerPath* pathNode, PointerMap* pointermap)
+PointerMap* pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLevel, PointerPath* pathNode, PointerMap* pointermap, std::unordered_set<uintptr_t> visitedAddresses)
 {
     // scan down till pointer found and consider it to be base of some struct/object and stop there
     if (recurseLevel <= 0)
@@ -919,11 +1045,13 @@ PointerMap* pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLeve
         pointermap->pathHead = nullptr;
         pointermap->next = nullptr;
     }
-        
+    
+    static int counter = 1;  // counter
     int guessSize = 100;
     Node* matches = nullptr;
     uintptr_t address = (uintptr_t) match->address;
     int offset = 0;
+    bool foundMatch = false; 
     for (offset = 0; offset < guessSize; offset++) {
         // keep going down untill find a match
         matches = filterAddresses(scanData, (uintptr_t)address, type_pointer, 1, matches);
@@ -932,36 +1060,102 @@ PointerMap* pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLeve
         if (matchCount <= 0)
             continue;
         else {
+            foundMatch = true;
             // Treat this as the beginning of a struct and stop here (wrong assumption but works decently)
             //printf("Matches found: %d\n", matchCount);
             //printMatches(matches);
-            break;
-        }
-    }
 
-    // PointerPath add
-    // Recurse one level down for match
-    Node* tmpMatches = matches;
-    while (tmpMatches) {
-        match = tmpMatches->match;
-        PointerPath* newPathNode = (PointerPath*)malloc(sizeof(PointerPath));
-        newPathNode->match = match;
-        newPathNode->offset = offset;
-        newPathNode->next = pathNode;
-        if (!pointermap->pathHead) {
-            pointermap->pathHead = newPathNode;
-        }
-        else {
-            PointerMap* tmp = (PointerMap*)malloc(sizeof(PointerMap));
-            tmp->pathHead = newPathNode;
-            tmp->next = pointermap;
-            pointermap = tmp;
-        }
-        
-        pointermap = pointermapScan(scanData, match, recurseLevel - 1, newPathNode, pointermap);
+            // PointerPath add
+            
+            // Recurse one level down for match
 
-        tmpMatches = tmpMatches->next;
-    }
+            Node* tmpMatches = matches;
+            while (tmpMatches) {
+                match = tmpMatches->match;
+
+                // Check if the match is already in the current path to avoid infinite loops
+                bool matchInPath = false;
+                PointerPath* path = pathNode;
+                while (path) {
+                    if (path->match->address == match->address) {
+                        matchInPath = true;
+                        break;
+                    }
+                    path = path->next;
+                }
+
+                // Check if the match address has been visited before to avoid revisiting
+                bool addressVisited = false;
+                if (visitedAddresses.find((uintptr_t) match->address) != visitedAddresses.end())
+                    addressVisited = true;
+
+                // Add match to pointer path and scan for it too (unless its already in path causing a loop)
+                if (!matchInPath && !addressVisited) {
+                    // Store the visited address
+                    visitedAddresses.insert((uintptr_t) match->address);
+
+                    // Allocate new PointerPath node and add to pathnode given in the function
+                    PointerPath* newPathNode = (PointerPath*)malloc(sizeof(PointerPath));
+                    newPathNode->match = match;
+                    newPathNode->offset = offset;
+                    newPathNode->next = pathNode;
+                    if (!pointermap->pathHead) {
+                        pointermap->pathHead = newPathNode;
+
+                        // Simple-print the path
+                        PointerPath* path = newPathNode;
+                        printf("%d:\tAddress: ", counter++, path->match->address);
+                        while (path) {
+                            if (offset != 0)
+                                printf("[+ 0x%x] ", offset);
+                            printf("%p -> ", path->match->address);
+
+                            offset = path->offset;
+
+                            if (!path->next) {
+                                if (offset != 0)
+                                    printf("[+ 0x%x] ", offset);
+                                printf("(target)\n");
+                            }
+
+                            path = path->next;
+                        }
+                    }
+                    else {
+                        // Allocate new pointermap node and add infront
+                        PointerMap* tmp = (PointerMap*)malloc(sizeof(PointerMap));
+                        tmp->pathHead = newPathNode;
+                        tmp->next = pointermap;
+                        pointermap = tmp;
+
+                        // Simple-print the path
+                        PointerPath* path = tmp->pathHead;
+                        printf("%d:\tAddress: ", counter++, path->match->address);
+                        while (path) {
+                            if (offset != 0)
+                                printf("[+ 0x%x] ", offset);
+                            printf("%p -> ", path->match->address);
+
+                            offset = path->offset;
+
+                            if (!path->next) {
+                                if (offset != 0)
+                                    printf("[+ 0x%x] ", offset);
+                                printf("(target)\n");
+                            }
+
+                            path = path->next;
+                        }
+                    } // End: adding pointer path node to pointermap
+
+                    // recursively scan for that path node aswell
+                    pointermap = pointermapScan(scanData, match, recurseLevel - 1, newPathNode, pointermap, visitedAddresses);
+                } // End: if (match not in path already)
+
+                tmpMatches = tmpMatches->next;
+            } // End: while(matches)
+        } // End: if found matches
+    } // End: offset loop
 
     return pointermap;
 }
@@ -1350,7 +1544,7 @@ void printMatchesWideChar(int length, Node* matches) {
 }
 
 // mirror iteration of printMatches for UI selection after print
-const MATCH* getMatchByPrintOrder(Node* matches, int selection)
+MATCH* getMatchByPrintOrder(Node* matches, int selection)
 {
     Node* head = matches;
     Node* curr = head;
@@ -1359,7 +1553,7 @@ const MATCH* getMatchByPrintOrder(Node* matches, int selection)
     int counter = 1;
 
     while (curr != nullptr) {
-        const MATCH* match = curr->match;
+        MATCH* match = curr->match;
         if (counter == selection)
             return match;
         counter++;

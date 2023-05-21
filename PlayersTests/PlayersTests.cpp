@@ -25,14 +25,14 @@ enum Modifier {
 };
 
 enum SkillID {
-    Call_of_the_Forge_God,
-    Placidusax_Ruin,
-    Blessing_of_the_Erdtree
+    Call_of_the_Forge_God = 487253361,
+    Placidusax_Ruin = 487253322,
+    Blessing_of_the_Erdtree = 487253377
 };
 
 typedef struct Skill {
     const char* name;
-    int id;
+    SkillID id;
     int level;
     bool (*castSkill)(int);
 } Skill;
@@ -94,11 +94,11 @@ int main()
     hellblade->damage = 99;
     hellblade->type = weapon;
     hellblade->activeBuff = fire;
-    Skill weaponSkill;
-    weaponSkill.id = Call_of_the_Forge_God;
-    weaponSkill.level = 99;
-    weaponSkill.name = "Call of the Forge God";
-    hellblade->activeSkill = &weaponSkill;
+    Skill* weaponSkill = (Skill*) malloc(sizeof(Skill));
+    weaponSkill->id = Call_of_the_Forge_God;
+    weaponSkill->level = 99;
+    weaponSkill->name = "Call of the Forge God";
+    hellblade->activeSkill = weaponSkill;
 
     Item* healthpot = (Item*) malloc(sizeof(Item));
     healthpot->name = "Health Potion";
@@ -234,14 +234,49 @@ int main()
     printf("Potential pointer path (Recurse 2):\n"
         "(Global) map: %p + [offset 0x%x] -> players: %p + [offset 0x%x] *-> player: %p + [offset 0x%x] -> HP %p\n"
         "map->players[1]->HP\n",
-        g_map, offsetof(Map, players), g_map.players, sizeof(Player) * 1, g_map.players[1], offsetof(Player, HP), &(g_map.players[1]->HP)
+        g_map, offsetof(Map, players), 
+        g_map.players, sizeof(Player) * 1, 
+        g_map.players[1], offsetof(Player, HP), 
+        &(g_map.players[1]->HP)
     );
 
     printf("Potential pointer path (Recurse 4):\n"
         "(Heap) map: %p + [offset 0x%x] -> players: %p + [offset 0x%x] *-> player: %p + [offset 0x%x] -> slots %p + [offset 0x%x] *-> item in slot: %p + [offset 0x%x] *-> item skill: %p + [offset 0x%x] *-> skill identifier: %p\n"
         "map->players[2]->slots[1].item->activeSkill->id\n",
-        map, offsetof(Map, players), map->players, sizeof(Player) * 2, map->players[2], offsetof(Player, slots), map->players[2]->slots, sizeof(Slot) * 1, map->players[2]->slots[1].item, offsetof(Item, activeSkill), map->players[2]->slots[1].item->activeSkill, offsetof(Skill, id), map->players[2]->slots[1].item->activeSkill->id
+        map, offsetof(Map, players), 
+        map->players, sizeof(Player) * 2, 
+        map->players[2], offsetof(Player, slots), 
+        map->players[2]->slots, sizeof(Slot) * 1, 
+        map->players[2]->slots[1].item, offsetof(Item, activeSkill), 
+        map->players[2]->slots[1].item->activeSkill, offsetof(Skill, id), 
+        map->players[2]->slots[1].item->activeSkill->id
     );
+
+    system("pause");
+    g_map.players[2] = p1;
+    printf("g_map: %p, value: %p\n",
+        &g_map, g_map
+    );
+    printf("g_map.players[2]: %p, value: %p\n",
+        &(g_map.players[2]), g_map.players[2]
+    );
+    printf("g_map.players[2]->slots[1]: %p, value: %p\n",
+        &(g_map.players[2]->slots[1]), g_map.players[2]->slots[1]
+    );
+    printf("g_map.players[2]->slots[1].item: %p, value: %p\n",
+        &(g_map.players[2]->slots[1].item), g_map.players[2]->slots[1].item
+    );
+    printf("g_map.players[2]->slots[1].item->activeSkill: %p, value: %p\n", 
+        &(g_map.players[2]->slots[1].item->activeSkill), g_map.players[2]->slots[1].item->activeSkill
+    );
+    printf("g_map.players[2]->slots[1].item->activeSkill->id: %p, value: %d\n", 
+        &(g_map.players[2]->slots[1].item->activeSkill->id),
+        g_map.players[2]->slots[1].item->activeSkill->id
+    );
+    printf("");
+    printf("");
+    printf("");
+    printf("");
 
     system("pause");
 
@@ -307,13 +342,13 @@ void printMapInfo(Map m)
     }
 }
 
-bool castSkill(int skillID)
+bool castSkill(SkillID skillID)
 {
     switch (skillID)
     {
-    case 1:
+    case Call_of_the_Forge_God:
         return true;
-    case 2:
+    case Placidusax_Ruin:
         return true;
     }
 

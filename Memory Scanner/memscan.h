@@ -1,5 +1,6 @@
 #pragma once
 #include <Windows.h>
+#include <unordered_set>
 
 // set of windows constants for memory protections indicating the memory is writable
 #define WRITEABLE_MEM (PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY)
@@ -32,6 +33,21 @@ enum HUNTING_TYPE {
     type_pointer
 };
 
+// enum for freeze/unfreeze
+enum FREEZE_ACTION {
+    action_freeze,
+    action_unfreeze
+};
+
+// for freeze/unfreeze handler thread
+typedef struct _freezeRequest {
+    uintptr_t address;
+    uintptr_t value;
+    FREEZE_ACTION action;
+    HANDLE unfreeze_event;
+    HANDLE hProc;
+} FreezeRequest;
+
 // hold individual matches
 typedef struct _MATCH {
     long long int id;
@@ -41,6 +57,7 @@ typedef struct _MATCH {
     MBLOCK* memblock;
     HUNTING_TYPE type;
     HUNTING_TYPE pointTotype;  // user supplied in saved addresses or known when doing pointerscan/map for saved address
+    FreezeRequest* freeze;
 } MATCH;
 
 // for the sorted list of matches
@@ -138,8 +155,12 @@ void printMatches(Node* matches);
 void scanUI(MBLOCK* scanData, HUNTING_TYPE type);
 uintptr_t getUserInputForTypeUI(HUNTING_TYPE type);
 int countMatches(const Node* matches);
-PointerMap* pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLevel, PointerPath* pathNode, PointerMap* pathList);
-const MATCH* getMatchByPrintOrder(Node* matches, int selection);
+PointerMap* pointermapScan(MBLOCK* scanData, const MATCH* match, int recurseLevel, PointerPath* pathNode, PointerMap* pointermap, std::unordered_set<uintptr_t> visitedAddresses);
+MATCH* getMatchByPrintOrder(Node* matches, int selection);
 void pointermapUI(MBLOCK* scanData);
 void printPointermap(PointerMap* pointermap);
 void printMatch(const MATCH* match);
+FreezeRequest* freezeAddress(const MATCH* match, uintptr_t value);
+DWORD WINAPI freezeHandler(LPVOID lpFreezeRequest);
+void unfreezeAddress(MATCH* match);
+void freezeAddressUI();
