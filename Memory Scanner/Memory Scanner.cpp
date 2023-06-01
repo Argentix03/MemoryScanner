@@ -482,12 +482,20 @@ MBLOCK* startScan(int pid)
 // free all memblocks in a memlist 
 void closeScan(MBLOCK* memlist)
 {
+    // Free all memblocks
     do {
 	    const MBLOCK* mb = memlist;
         freeMemBlock(mb);
         if (!memlist->next)
             CloseHandle(memlist->hProc);  // same handle for the whole memlist
     } while (memlist = memlist->next);
+
+    // Unfreeze all frozen matches
+    Node* curr = g_savedMatches;
+    while (curr) {
+        unfreezeAddress(curr->match);
+        curr = curr->next;
+    }
 
     return;
 }
@@ -622,7 +630,8 @@ DWORD WINAPI freezeHandler(LPVOID lpFreezeRequest)
         // Functionilize this for a single write and make sure to handle all data types!!
         uintptr_t value = fr->value;  // for now this corrupts the stack when written on a small stack variable (with the size of uintptr_t)
         if (!WriteProcessMemory(fr->hProc, (LPVOID) fr->address, &value, sizeof(value), nullptr)) {
-                printf("Error writing value 0x%x to address: %lp\nError id: %lu\nError msg: %ls\n", fr->value, fr->address, GetLastError(), getLastErrorStr());
+            // this is VERY spammy but it shows me where i forgot to close handles or something about memory permissions changing
+            printf("Error writing value 0x%x to address: %lp\nError id: %lu\nError msg: %ls\n", fr->value, fr->address, GetLastError(), getLastErrorStr());
         }
 
         // Check for unfreeze (also count as the sleep to throttle some WPM spam)
@@ -825,7 +834,7 @@ void savedMatchesUI(MBLOCK* scanData)
         switch (userChoice)
         {
         case 1:
-            printf(NOT_IMPLEMENTED);
+            writeAddressUI();
             break;
         case 2:
             freezeAddressUI();
@@ -849,6 +858,37 @@ void savedMatchesUI(MBLOCK* scanData)
     }
 
     return;
+}
+
+void writeAddressUI()
+{
+    // select match
+    int matchChoice;
+    printf("Select address (number): ");
+    scanf_s("%d", &matchChoice);
+    MATCH* match = getMatchByPrintOrder(g_savedMatches, matchChoice);
+    FreezeRequest* fr;
+    uintptr_t value;
+
+    value = getUserInputForTypeUI(match->type);
+    if (!writeAddress(match, value)) {
+        printf("Failed writing to address. Memory region info:\n");
+        printMemblock(match->memblock, false);
+    }
+        
+    return;
+}
+
+bool writeAddress(MATCH* match, uintptr_t value)
+{
+    SIZE_T lpNumberOfBytesWritten;
+    if (WriteProcessMemory(match->memblock->hProc, match->address, &value, getSizeForType(match->type), &lpNumberOfBytesWritten))
+        return true;
+    else {
+        printf("Error writing value 0x%x (%d) for match: %p\nError id: %lu\nError msg: %ls\n", value, value, match->address, GetLastError(), getLastErrorStr());
+        printf("number of bytes written: %d\n", lpNumberOfBytesWritten);
+        return false;
+    }
 }
 
 void freezeAddressUI()
@@ -875,18 +915,22 @@ void freezeAddressUI()
         case 1:
             // check if match is already frozen
             if (match->freeze) {
-                printf("address is already frozen\n");
+                printf("Address is already frozen\n");
             }
             else {
                 // freeze match
                 fr = freezeAddress(match, getUserInputForTypeUI(match->type));
                 match->freeze = fr;
-                printf("address frozen\n");
+                printf("Address frozen\n");
             }
             return;
         case 2:
-            unfreezeAddress(match);
-            printf("address unfrozen\n");
+            if(!match->freeze)
+                printf("Address was not frozen");
+            else {
+                unfreezeAddress(match);
+                printf("Address unfrozen\n");
+            }
             return;
         default:
             printf("Invalid choice\n");
@@ -921,22 +965,22 @@ FreezeRequest* freezeAddress(const MATCH* match, uintptr_t value)
 }
 
 // Signals freeze handler thread to stop spamming wpm
-void unfreezeAddress(MATCH* match)
+bool unfreezeAddress(MATCH* match)
 {
     if (!match->freeze) {
-        printf("Address was not frozen\n");
+        return false;
     }
     else if (!SetEvent(match->freeze->unfreeze_event))
     {
         printf("SetEvent failed (%d)\n", GetLastError());
-        return;
+        return false;
     }
     
     // change state of match to not frozen and free FreezeRequest
     free(match->freeze);
     match->freeze = nullptr;
 
-    return;
+    return true;
 }
 
 void pointermapUI(MBLOCK* scanData)

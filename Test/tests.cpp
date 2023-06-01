@@ -65,17 +65,19 @@ int testInt()
 
 	a = 76453;
 	g_a = 76453;
+	Sleep(500); 
 	printf("var [INT] (local): a\tvalue: %d\taddress:%p\n", a, &a);
 	printf("var [INT] (local): b\tvalue: %d\taddress:%p\n", b, &b);
 	printf("var [INT] (local): c\tvalue: %d\taddress:%p\n", c, &c);
 	printf("var [INT] (global): a\tvalue: %d\taddress:%p\n", g_a, &g_a);
 	printf("var [INT] (global): b\tvalue: %d\taddress:%p\n", g_b, &g_b);
 	printf("var [INT] (global): c\tvalue: %d\taddress:%p\n", g_c, &g_c);
-
+	
 	system("pause");
 
 	a = 123456;
 	g_a = 76453;
+	Sleep(500);
 	printf("var [INT] (local): a\tvalue: %d\taddress:%p\n", a, &a);
 	printf("var [INT] (local): b\tvalue: %d\taddress:%p\n", b, &b);
 	printf("var [INT] (local): c\tvalue: %d\taddress:%p\n", c, &c);
@@ -108,6 +110,7 @@ int testPointers()
 	intA = 123456;
 	intB = 123457;
 	g_a = 1;
+	Sleep(500);
 	printf("var [INT] (local): a\tvalue: %d\taddress:%p\n", intA, &intA);
 	printf("var [INT] (global): c\tvalue: %d\taddress:%p\n", intB, &intB);
 	printf("var [pointer] (local): a\tvalue: 0x%p\taddress:%p\n", pointerA, &pointerA);
@@ -120,6 +123,7 @@ int testPointers()
 	intA = 4321;
 	intB = 4322;
 	g_b = 2;
+	Sleep(500);
 	printf("var [INT] (local): a\tvalue: %d\taddress:%p\n", intA, &intA);
 	printf("var [INT] (global): c\tvalue: %d\taddress:%p\n", intB, &intB);
 	printf("var [pointer] (local): a\tvalue: 0x%p\taddress:%p\n", pointerA, &pointerA);

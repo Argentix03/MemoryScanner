@@ -162,5 +162,7 @@ void printPointermap(PointerMap* pointermap);
 void printMatch(const MATCH* match);
 FreezeRequest* freezeAddress(const MATCH* match, uintptr_t value);
 DWORD WINAPI freezeHandler(LPVOID lpFreezeRequest);
-void unfreezeAddress(MATCH* match);
+bool unfreezeAddress(MATCH* match);
 void freezeAddressUI();
+void writeAddressUI();
+bool writeAddress(MATCH* match, uintptr_t value);
