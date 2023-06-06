@@ -45,7 +45,7 @@ Explore and experiment with all this cool stuff:
 - [x] Provide extended information on modules and relative/static addresses and commit types. Add 'use' for mapped/image
 - [x] Pointer path tracing (pointermaps)
 - [ ] Implement tracing functionality for reads/writes to saved addresses
-- [ ] Add freeze/unfreeze values (Continuous WPM is enough for basic prodding on a value from the tool)
+- [x] Add freeze/unfreeze values (Continuous WPM is enough for basic prodding on a value from the tool)
 - [ ] Implement generic speedhacks (hook game ticks to fake time etc.)
 - [ ] Parsing the process's PE headers and import tables to determine which DLLs are loaded and which functions are being used. This can help identify memory regions that are being used for code or data from a particular DLL
 - [ ] Check stack and heap to identify memory regions that are being used for local variables, function arguments, or dynamically allocated memory
