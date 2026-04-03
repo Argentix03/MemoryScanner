@@ -1,6 +1,90 @@
 # MemoryScanner
 its a memory scanner.
 
+## Getting Started
+
+### Prerequisites
+
+**Rust port** (in `rust/`)
+
+- [Rust toolchain](https://rustup.rs/) (stable, 1.77+)
+- Windows GNU cross-compilation target:
+  ```sh
+  rustup target add x86_64-pc-windows-gnu
+  ```
+- A MinGW-w64 linker — install via your package manager, e.g.:
+  ```sh
+  # Debian / Ubuntu
+  sudo apt install gcc-mingw-w64-x86-64
+  # Arch
+  sudo pacman -S mingw-w64-gcc
+  ```
+  On Windows with the MSVC toolchain you can skip MinGW and just use
+  `--target x86_64-pc-windows-msvc`.
+
+**C++ port** (in `Memory Scanner/`, `Test/`, `PlayersTests/`)
+
+- Windows + Visual Studio 2019 or later (the `.sln` / `.vcxproj` files are
+  included). Open `Memory Scanner.sln` and build from there.
+
+---
+
+### Rust — compile-check (any OS)
+
+```sh
+cd rust
+cargo check --target x86_64-pc-windows-gnu
+```
+
+### Rust — build all binaries (Windows or cross-compile)
+
+```sh
+cd rust
+cargo build --release --target x86_64-pc-windows-gnu
+```
+
+Outputs land in `rust/target/x86_64-pc-windows-gnu/release/`:
+
+| Binary | Purpose |
+|---|---|
+| `memscan.exe` | The memory scanner |
+| `test_target.exe` | Simple int / pointer test target |
+| `players_test.exe` | Complex struct / pointer-path test target |
+
+### Rust — run unit tests (Windows only)
+
+The 71 unit tests cover all pure-logic functions (type-size lookups,
+protection-flag formatting, match-list operations, in-memory buffer scans, etc.).
+They must be run **on Windows** because the `windows` crate links to Win32:
+
+```sh
+cd rust
+cargo test --target x86_64-pc-windows-gnu
+```
+
+Expected output: `test result: ok. 71 passed; 0 failed`
+
+---
+
+### Manual integration testing (Windows)
+
+1. Build both binaries (see above).
+2. In one terminal, run a test target and note the PID it prints:
+   ```
+   test_target.exe
+   # or
+   players_test.exe
+   ```
+3. In a second **elevated** terminal (Administrator), run the scanner and
+   enter the PID when prompted:
+   ```
+   memscan.exe
+   ```
+4. Follow the interactive scanner menu to attach, scan, filter, freeze, and
+   write values in the test target process.
+
+---
+
 
 Goal:
 Explore and experiment with all this cool stuff:
