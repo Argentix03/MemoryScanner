@@ -283,8 +283,8 @@ fn main() {
         G_MAP.visible = 1;
         G_MAP.players[0] = p1;
         G_MAP.players[1] = p2;
-        (*G_MAP.players[0]).hp = 1337;
-        (*G_MAP.players[1]).hp = 1338;
+        (*(*(&raw const G_MAP)).players[0]).hp = 1337;
+        (*(*(&raw const G_MAP)).players[1]).hp = 1338;
 
         // Generate map (dynamic map on the heap)
         let map = Box::into_raw(Box::new(Map {
@@ -309,8 +309,8 @@ fn main() {
         print_map_info_ptr(map);
         // G_MAP passed by value — copy to stack, matching C++ printMapInfo(Map m)
         let g_map_copy = Map {
-            visible: G_MAP.visible,
-            players: G_MAP.players,
+            visible: (*(&raw const G_MAP)).visible,
+            players: (*(&raw const G_MAP)).players,
         };
         print_map_info(g_map_copy);
 
@@ -318,8 +318,8 @@ fn main() {
 
         hit(p1, 100);
         hit(p2, 200);
-        hit(G_MAP.players[0], 100);
-        hit(G_MAP.players[1], 200);
+        hit((*(&raw const G_MAP)).players[0], 100);
+        hit((*(&raw const G_MAP)).players[1], 200);
         (*map).players[2] = p1;
         (*map).players[3] = p2;
 
@@ -333,8 +333,8 @@ fn main() {
 
         println!("global g_map:");
         let g_map_copy2 = Map {
-            visible: G_MAP.visible,
-            players: G_MAP.players,
+            visible: (*(&raw const G_MAP)).visible,
+            players: (*(&raw const G_MAP)).players,
         };
         print_map_info(g_map_copy2);
 
@@ -353,10 +353,10 @@ fn main() {
             "Potential pointer path (Recurse 2):\n\
              (Global) map: {:p} + [offset 0x{:x}] -> players: {:p} + [offset 0x{:x}] *-> player: {:p} + [offset 0x{:x}] -> HP {:p}\n\
              map->players[1]->HP",
-            &G_MAP, offset_of!(Map, players),
-            G_MAP.players.as_ptr(), std::mem::size_of::<Player>() * 1,
-            G_MAP.players[1], offset_of!(Player, hp),
-            &(*G_MAP.players[1]).hp
+            &raw const G_MAP, offset_of!(Map, players),
+            (*(&raw const G_MAP)).players.as_ptr(), std::mem::size_of::<Player>() * 1,
+            (*(&raw const G_MAP)).players[1], offset_of!(Player, hp),
+            &(*(*(&raw const G_MAP)).players[1]).hp
         );
 
         println!(
@@ -375,15 +375,15 @@ fn main() {
         pause();
 
         G_MAP.players[2] = p1;
-        println!("g_map: {:p}, value: {:p}", &G_MAP, &G_MAP as *const Map);
-        println!("g_map.players[2]: {:p}, value: {:p}", &G_MAP.players[2], G_MAP.players[2]);
-        println!("g_map.players[2]->slots[1]: {:p}, value: {:p}", &(*G_MAP.players[2]).slots[1], &(*G_MAP.players[2]).slots[1] as *const Slot);
-        println!("g_map.players[2]->slots[1].item: {:p}, value: {:p}", &(*G_MAP.players[2]).slots[1].item, (*G_MAP.players[2]).slots[1].item);
-        println!("g_map.players[2]->slots[1].item->activeSkill: {:p}, value: {:p}", &(*(*G_MAP.players[2]).slots[1].item).active_skill, (*(*G_MAP.players[2]).slots[1].item).active_skill);
+        println!("g_map: {:p}, value: {:p}", &raw const G_MAP, &raw const G_MAP);
+        println!("g_map.players[2]: {:p}, value: {:p}", &raw const G_MAP.players[2], (*(&raw const G_MAP)).players[2]);
+        println!("g_map.players[2]->slots[1]: {:p}, value: {:p}", &(*(*(&raw const G_MAP)).players[2]).slots[1], &(*(*(&raw const G_MAP)).players[2]).slots[1] as *const Slot);
+        println!("g_map.players[2]->slots[1].item: {:p}, value: {:p}", &(*(*(&raw const G_MAP)).players[2]).slots[1].item, (*(*(&raw const G_MAP)).players[2]).slots[1].item);
+        println!("g_map.players[2]->slots[1].item->activeSkill: {:p}, value: {:p}", &(*(*(*(&raw const G_MAP)).players[2]).slots[1].item).active_skill, (*(*(*(&raw const G_MAP)).players[2]).slots[1].item).active_skill);
         println!(
             "g_map.players[2]->slots[1].item->activeSkill->id: {:p}, value: {}",
-            &(*(*(*G_MAP.players[2]).slots[1].item).active_skill).id,
-            (*(*(*G_MAP.players[2]).slots[1].item).active_skill).id as i32
+            &(*(*(*(*(&raw const G_MAP)).players[2]).slots[1].item).active_skill).id,
+            (*(*(*(*(&raw const G_MAP)).players[2]).slots[1].item).active_skill).id as i32
         );
 
         pause();

@@ -55,7 +55,16 @@ Outputs land in `rust/target/x86_64-pc-windows-gnu/release/`:
 
 The 71 unit tests cover all pure-logic functions (type-size lookups,
 protection-flag formatting, match-list operations, in-memory buffer scans, etc.).
-They must be run **on Windows** because the `windows` crate links to Win32:
+They must be run **on Windows** because the `windows` crate links to Win32.
+
+With the default MSVC toolchain (no extra flags needed):
+
+```sh
+cd rust
+cargo test
+```
+
+Or explicitly with the GNU toolchain:
 
 ```sh
 cd rust

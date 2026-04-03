@@ -37,9 +37,9 @@ fn test_int() -> i32 {
     println!("var [INT] (local): b\tvalue: {}\taddress:{:p}", b, &b);
     println!("var [INT] (local): c\tvalue: {}\taddress:{:p}", c, &c);
     unsafe {
-        println!("var [INT] (global): a\tvalue: {}\taddress:{:p}", G_A, &G_A);
-        println!("var [INT] (global): b\tvalue: {}\taddress:{:p}", G_B, &G_B);
-        println!("var [INT] (global): c\tvalue: {}\taddress:{:p}", G_C, &G_C);
+        println!("var [INT] (global): a\tvalue: {}\taddress:{:p}", *(&raw const G_A), &raw const G_A);
+        println!("var [INT] (global): b\tvalue: {}\taddress:{:p}", *(&raw const G_B), &raw const G_B);
+        println!("var [INT] (global): c\tvalue: {}\taddress:{:p}", *(&raw const G_C), &raw const G_C);
     }
 
     pause();
@@ -51,9 +51,9 @@ fn test_int() -> i32 {
     println!("var [INT] (local): b\tvalue: {}\taddress:{:p}", b, &b);
     println!("var [INT] (local): c\tvalue: {}\taddress:{:p}", c, &c);
     unsafe {
-        println!("var [INT] (global): a\tvalue: {}\taddress:{:p}", G_A, &G_A);
-        println!("var [INT] (global): b\tvalue: {}\taddress:{:p}", G_B, &G_B);
-        println!("var [INT] (global): c\tvalue: {}\taddress:{:p}", G_C, &G_C);
+        println!("var [INT] (global): a\tvalue: {}\taddress:{:p}", *(&raw const G_A), &raw const G_A);
+        println!("var [INT] (global): b\tvalue: {}\taddress:{:p}", *(&raw const G_B), &raw const G_B);
+        println!("var [INT] (global): c\tvalue: {}\taddress:{:p}", *(&raw const G_C), &raw const G_C);
     }
 
     pause();
@@ -65,9 +65,9 @@ fn test_int() -> i32 {
     println!("var [INT] (local): b\tvalue: {}\taddress:{:p}", b, &b);
     println!("var [INT] (local): c\tvalue: {}\taddress:{:p}", c, &c);
     unsafe {
-        println!("var [INT] (global): a\tvalue: {}\taddress:{:p}", G_A, &G_A);
-        println!("var [INT] (global): b\tvalue: {}\taddress:{:p}", G_B, &G_B);
-        println!("var [INT] (global): c\tvalue: {}\taddress:{:p}", G_C, &G_C);
+        println!("var [INT] (global): a\tvalue: {}\taddress:{:p}", *(&raw const G_A), &raw const G_A);
+        println!("var [INT] (global): b\tvalue: {}\taddress:{:p}", *(&raw const G_B), &raw const G_B);
+        println!("var [INT] (global): c\tvalue: {}\taddress:{:p}", *(&raw const G_C), &raw const G_C);
     }
 
     pause();
@@ -88,8 +88,8 @@ fn test_pointers() -> i32 {
     println!("var [pointer] (local): a\tvalue: 0x{:p}\taddress:{:p}", pointer_a, &pointer_a);
     println!("var [pointer] (global): c\tvalue: 0x{:p}\taddress:{:p}", pointer_b, &pointer_b);
     unsafe {
-        println!("var [INT] (global): a\tvalue: 0x{:p}\taddress:{:p}", G_POINTER_A, &G_POINTER_A);
-        println!("var [INT] (global): b\tvalue: 0x{:p}\taddress:{:p}", G_POINTER_B, &G_POINTER_B);
+        println!("var [INT] (global): a\tvalue: 0x{:p}\taddress:{:p}", *(&raw const G_POINTER_A), &raw const G_POINTER_A);
+        println!("var [INT] (global): b\tvalue: 0x{:p}\taddress:{:p}", *(&raw const G_POINTER_B), &raw const G_POINTER_B);
     }
 
     pause();
@@ -103,8 +103,8 @@ fn test_pointers() -> i32 {
     println!("var [pointer] (local): a\tvalue: 0x{:p}\taddress:{:p}", pointer_a, &pointer_a);
     println!("var [pointer] (global): c\tvalue: 0x{:p}\taddress:{:p}", pointer_b, &pointer_b);
     unsafe {
-        println!("var [INT] (global): a\tvalue: 0x{:p}\taddress:{:p}", G_POINTER_A, &G_POINTER_A);
-        println!("var [INT] (global): b\tvalue: 0x{:p}\taddress:{:p}", G_POINTER_B, &G_POINTER_B);
+        println!("var [INT] (global): a\tvalue: 0x{:p}\taddress:{:p}", *(&raw const G_POINTER_A), &raw const G_POINTER_A);
+        println!("var [INT] (global): b\tvalue: 0x{:p}\taddress:{:p}", *(&raw const G_POINTER_B), &raw const G_POINTER_B);
     }
 
     pause();
@@ -118,8 +118,8 @@ fn test_pointers() -> i32 {
     println!("var [pointer] (local): a\tvalue: 0x{:p}\taddress:{:p}", pointer_a, &pointer_a);
     println!("var [pointer] (global): c\tvalue: 0x{:p}\taddress:{:p}", pointer_b, &pointer_b);
     unsafe {
-        println!("var [INT] (global): a\tvalue: 0x{:p}\taddress:{:p}", G_POINTER_A, &G_POINTER_A);
-        println!("var [INT] (global): b\tvalue: 0x{:p}\taddress:{:p}", G_POINTER_B, &G_POINTER_B);
+        println!("var [INT] (global): a\tvalue: 0x{:p}\taddress:{:p}", *(&raw const G_POINTER_A), &raw const G_POINTER_A);
+        println!("var [INT] (global): b\tvalue: 0x{:p}\taddress:{:p}", *(&raw const G_POINTER_B), &raw const G_POINTER_B);
     }
 
     pause();
