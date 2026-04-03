@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "memscan",
+    "test_target",
+    "players_test",
+]
+resolver = "2"
