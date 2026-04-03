@@ -1750,13 +1750,16 @@ fn main() {
     main_menu_ui();
 }
 
-// ─── unit tests ──────────────────────────────────────────────────────────────
+// ─── unit & integration tests ────────────────────────────────────────────────
 //
-// Tests cover all pure-logic and in-memory-buffer functions.
-// Functions that require a live Windows process handle (start_scan, close_scan,
-// filter_addresses re-filter path, write_address, freeze/unfreeze, suspend_target)
-// cannot be unit tested without a real target process and are left for
-// integration / manual testing.
+// Unit tests cover all pure-logic and in-memory-buffer functions.
+//
+// Integration tests (at the bottom of this module) spawn the workspace binaries
+// `test_target` and `players_test`, snapshot their memory with start_scan, and
+// assert that known global values are found.  They require the full workspace to
+// be built first; `cargo test` from the workspace root satisfies this
+// automatically.  Running only `cargo test -p memscan` will skip the tests
+// gracefully if the binaries are absent.
 //
 // These tests compile with `cargo check --target x86_64-pc-windows-gnu` and
 // run correctly when executed on Windows with `cargo test`.
@@ -2438,5 +2441,127 @@ mod tests {
 
         let m = matches.iter().find(|m| m.address as usize == 0x1004).unwrap();
         assert_eq!(m.point_to_type, HuntingType::Null);
+    }
+
+    // ── integration tests — real target-process scanning ──────────────────────
+    //
+    // Each test spawns a workspace binary with stdin piped so the process blocks
+    // on its first stdin read and stays alive during the scan.  The process is
+    // always killed before the assertions so that a failing assertion never leaks
+    // a child process.
+    //
+    // Requirement: build the whole workspace first (`cargo test` from the
+    // workspace root does this automatically).  Running only
+    // `cargo test -p memscan` without a prior build will print a skip message.
+
+    /// Locate a workspace binary by walking up from the current test-executable's
+    /// directory.  Unit-test binaries live in `target/{profile}/deps/`; workspace
+    /// release/debug binaries live one level above in `target/{profile}/`.
+    fn workspace_bin(name: &str) -> std::path::PathBuf {
+        let mut path = std::env::current_exe().expect("current_exe");
+        path.pop(); // remove test-binary filename
+        // If we are inside the `deps/` subdirectory, go up one more level.
+        if path.file_name().map(|n| n == "deps").unwrap_or(false) {
+            path.pop();
+        }
+        path.push(format!("{}.exe", name));
+        path
+    }
+
+    /// Spawn a child process, run a closure that receives the pid and a snapshot
+    /// of its memory, then kill the child and close the scan handle.  Returns the
+    /// vectors of matches produced by the closure so the caller can assert on them
+    /// after cleanup.
+    fn with_scanned_process<F>(exe: &std::path::Path, f: F)
+    where
+        F: FnOnce(u32, &[Box<MemBlock>]),
+    {
+        let mut child = std::process::Command::new(exe)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap_or_else(|e| panic!("failed to spawn {:?}: {}", exe, e));
+
+        let pid = child.id();
+
+        // Give the process time to reach its first stdin-blocking read.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+
+        let scan_data = match start_scan(pid) {
+            Some(d) if !d.is_empty() => d,
+            _ => {
+                let _ = child.kill();
+                panic!("start_scan({}) failed — try running the tests as Administrator", pid);
+            }
+        };
+
+        f(pid, &scan_data);
+
+        let _ = child.kill();
+        let _ = child.wait();
+        close_scan(scan_data);
+    }
+
+    #[test]
+    fn test_integration_scan_finds_test_target_globals() {
+        let exe = workspace_bin("test_target");
+        if !exe.exists() {
+            eprintln!(
+                "Skipping integration test: {:?} not found.\n\
+                 Run `cargo test` from the workspace root to build all binaries first.",
+                exe
+            );
+            return;
+        }
+
+        // Values of the mutable globals in test_target/src/main.rs:
+        //   static mut G_A: i32 = 1337;
+        //   static mut G_B: i32 = 123456;
+        //   static mut G_C: i32 = 76453;
+        let mut ma: Vec<Box<Match>> = Vec::new();
+        let mut mb: Vec<Box<Match>> = Vec::new();
+        let mut mc: Vec<Box<Match>> = Vec::new();
+
+        with_scanned_process(&exe, |_pid, scan_data| {
+            filter_addresses(Some(scan_data), 1337,   HuntingType::Int, 1, &mut ma);
+            filter_addresses(Some(scan_data), 123456, HuntingType::Int, 1, &mut mb);
+            filter_addresses(Some(scan_data), 76453,  HuntingType::Int, 1, &mut mc);
+        });
+
+        assert!(!ma.is_empty(), "G_A = 1337 not found in test_target memory");
+        assert!(!mb.is_empty(), "G_B = 123456 not found in test_target memory");
+        assert!(!mc.is_empty(), "G_C = 76453 not found in test_target memory");
+    }
+
+    #[test]
+    fn test_integration_scan_finds_players_test_globals() {
+        let exe = workspace_bin("players_test");
+        if !exe.exists() {
+            eprintln!(
+                "Skipping integration test: {:?} not found.\n\
+                 Run `cargo test` from the workspace root to build all binaries first.",
+                exe
+            );
+            return;
+        }
+
+        // Values established in players_test/src/main.rs before the first pause():
+        //   (*G_MAP.players[0]).hp = 1337  (Player "Perseidi")
+        //   (*G_MAP.players[1]).hp = 1338  (Player "Argentix")
+        //   SkillId::CallOfTheForgeGod     = 487253361  (stored in Skill struct)
+        let mut m_hp0:  Vec<Box<Match>> = Vec::new();
+        let mut m_hp1:  Vec<Box<Match>> = Vec::new();
+        let mut m_skill: Vec<Box<Match>> = Vec::new();
+
+        with_scanned_process(&exe, |_pid, scan_data| {
+            filter_addresses(Some(scan_data), 1337,      HuntingType::Int, 1, &mut m_hp0);
+            filter_addresses(Some(scan_data), 1338,      HuntingType::Int, 1, &mut m_hp1);
+            filter_addresses(Some(scan_data), 487253361, HuntingType::Int, 1, &mut m_skill);
+        });
+
+        assert!(!m_hp0.is_empty(),  "G_MAP.players[0]->hp = 1337 not found in players_test memory");
+        assert!(!m_hp1.is_empty(),  "G_MAP.players[1]->hp = 1338 not found in players_test memory");
+        assert!(!m_skill.is_empty(), "SkillId::CallOfTheForgeGod = 487253361 not found in players_test memory");
     }
 }
