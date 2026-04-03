@@ -1749,3 +1749,694 @@ fn main() {
 
     main_menu_ui();
 }
+
+// ─── unit tests ──────────────────────────────────────────────────────────────
+//
+// Tests cover all pure-logic and in-memory-buffer functions.
+// Functions that require a live Windows process handle (start_scan, close_scan,
+// filter_addresses re-filter path, write_address, freeze/unfreeze, suspend_target)
+// cannot be unit tested without a real target process and are left for
+// integration / manual testing.
+//
+// These tests compile with `cargo check --target x86_64-pc-windows-gnu` and
+// run correctly when executed on Windows with `cargo test`.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Re-import Windows types used directly in test helpers and assertions.
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::Memory::{
+        MEM_COMMIT, MEM_IMAGE, MEM_MAPPED, MEM_PRIVATE, MEM_RESERVE, MEMORY_BASIC_INFORMATION,
+        PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY,
+        PAGE_GUARD, PAGE_NOACCESS, PAGE_NOCACHE, PAGE_PROTECTION_FLAGS, PAGE_READONLY,
+        PAGE_READWRITE, PAGE_TARGETS_INVALID, PAGE_WRITECOMBINE, PAGE_WRITECOPY,
+    };
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+
+    /// Create a fake MemBlock backed by a byte buffer.
+    /// Sets `mbi.Type = MEM_PRIVATE` so that `get_string_use()` returns "" without
+    /// calling `GetModuleFileNameExW`, making the buffer-scan path safe to exercise
+    /// without a real Windows process handle.
+    fn make_test_memblock(id: i32, addr: usize, buffer: Vec<u8>) -> Box<MemBlock> {
+        let size = buffer.len();
+        let mut mbi: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
+        mbi.BaseAddress = addr as *mut c_void;
+        mbi.RegionSize = size;
+        mbi.Type = MEM_PRIVATE; // avoids GetModuleFileNameExW
+        Box::new(MemBlock {
+            id,
+            h_proc: HANDLE(std::ptr::null_mut()),
+            addr: addr as *mut c_void,
+            size,
+            buffer,
+            mbi,
+        })
+    }
+
+    /// Create a Match for testing list-management functions.
+    /// Sets `memblock` to null — only safe for tests that do not dereference it.
+    fn make_test_match(address: usize, data_type: HuntingType) -> Box<Match> {
+        Box::new(Match {
+            id: 0,
+            memblock_id: 0,
+            is_static: false,
+            address: address as *mut c_void,
+            memblock: std::ptr::null_mut(),
+            data_type,
+            point_to_type: HuntingType::Null,
+            freeze: std::ptr::null_mut(),
+        })
+    }
+
+    // ── get_string_state ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_get_string_state_commit() {
+        assert_eq!(get_string_state(MEM_COMMIT.0), "MEM_COMMIT");
+    }
+
+    #[test]
+    fn test_get_string_state_free() {
+        assert_eq!(get_string_state(0x10000), "MEM_FREE");
+    }
+
+    #[test]
+    fn test_get_string_state_reserve() {
+        assert_eq!(get_string_state(MEM_RESERVE.0), "MEM_RESERVE");
+    }
+
+    #[test]
+    fn test_get_string_state_unknown() {
+        assert_eq!(get_string_state(0), "");
+    }
+
+    // ── get_string_type ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_get_string_type_private() {
+        assert_eq!(get_string_type(MEM_PRIVATE.0), "Private");
+    }
+
+    #[test]
+    fn test_get_string_type_mapped() {
+        assert_eq!(get_string_type(MEM_MAPPED.0), "Mapped");
+    }
+
+    #[test]
+    fn test_get_string_type_image() {
+        assert_eq!(get_string_type(MEM_IMAGE.0), "Image");
+    }
+
+    #[test]
+    fn test_get_string_type_unknown() {
+        assert_eq!(get_string_type(0), "");
+    }
+
+    // ── get_string_protection ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_get_string_protection_zero_returns_no_query_permission() {
+        assert_eq!(
+            get_string_protection(PAGE_PROTECTION_FLAGS(0)),
+            "No query permission"
+        );
+    }
+
+    #[test]
+    fn test_get_string_protection_readonly() {
+        assert_eq!(get_string_protection(PAGE_READONLY), "R");
+    }
+
+    #[test]
+    fn test_get_string_protection_readwrite() {
+        assert_eq!(get_string_protection(PAGE_READWRITE), "RW");
+    }
+
+    #[test]
+    fn test_get_string_protection_writecopy() {
+        assert_eq!(get_string_protection(PAGE_WRITECOPY), "WC");
+    }
+
+    #[test]
+    fn test_get_string_protection_execute() {
+        assert_eq!(get_string_protection(PAGE_EXECUTE), "X");
+    }
+
+    #[test]
+    fn test_get_string_protection_execute_read() {
+        assert_eq!(get_string_protection(PAGE_EXECUTE_READ), "RX");
+    }
+
+    #[test]
+    fn test_get_string_protection_execute_readwrite() {
+        assert_eq!(get_string_protection(PAGE_EXECUTE_READWRITE), "RWX");
+    }
+
+    #[test]
+    fn test_get_string_protection_execute_writecopy() {
+        assert_eq!(get_string_protection(PAGE_EXECUTE_WRITECOPY), "WCX");
+    }
+
+    #[test]
+    fn test_get_string_protection_noaccess() {
+        assert_eq!(get_string_protection(PAGE_NOACCESS), "NA");
+    }
+
+    #[test]
+    fn test_get_string_protection_targets_invalid_cfg() {
+        assert_eq!(get_string_protection(PAGE_TARGETS_INVALID), "CFG Stuff");
+    }
+
+    #[test]
+    fn test_get_string_protection_readwrite_guard_modifier() {
+        assert_eq!(
+            get_string_protection(PAGE_PROTECTION_FLAGS(PAGE_READWRITE.0 | PAGE_GUARD.0)),
+            "RW+G"
+        );
+    }
+
+    #[test]
+    fn test_get_string_protection_execute_read_nocache_modifier() {
+        assert_eq!(
+            get_string_protection(PAGE_PROTECTION_FLAGS(PAGE_EXECUTE_READ.0 | PAGE_NOCACHE.0)),
+            "RX+NOCACHE"
+        );
+    }
+
+    #[test]
+    fn test_get_string_protection_readwrite_writecombine_modifier() {
+        assert_eq!(
+            get_string_protection(PAGE_PROTECTION_FLAGS(PAGE_READWRITE.0 | PAGE_WRITECOMBINE.0)),
+            "RW+WRITECOMBINE"
+        );
+    }
+
+    // ── path_find_file_name ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_path_find_file_name_deep_path() {
+        assert_eq!(
+            path_find_file_name("C:\\Windows\\System32\\notepad.exe"),
+            "notepad.exe"
+        );
+    }
+
+    #[test]
+    fn test_path_find_file_name_no_backslash_returns_input() {
+        assert_eq!(path_find_file_name("notepad.exe"), "notepad.exe");
+    }
+
+    #[test]
+    fn test_path_find_file_name_empty_string() {
+        assert_eq!(path_find_file_name(""), "");
+    }
+
+    #[test]
+    fn test_path_find_file_name_trailing_backslash_returns_empty() {
+        assert_eq!(path_find_file_name("C:\\Windows\\"), "");
+    }
+
+    #[test]
+    fn test_path_find_file_name_single_component() {
+        assert_eq!(path_find_file_name("C:\\file.exe"), "file.exe");
+    }
+
+    // ── get_size_for_type ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_get_size_for_type_all_variants() {
+        assert_eq!(get_size_for_type(HuntingType::Byte), 1);
+        assert_eq!(get_size_for_type(HuntingType::Char), 1);
+        assert_eq!(get_size_for_type(HuntingType::Short), 2);
+        assert_eq!(get_size_for_type(HuntingType::Int), 4);
+        assert_eq!(get_size_for_type(HuntingType::Float), 4);
+        assert_eq!(get_size_for_type(HuntingType::Double), 8);
+        assert_eq!(get_size_for_type(HuntingType::LongLongInt), 8);
+        assert_eq!(get_size_for_type(HuntingType::Pointer), 8);
+        assert_eq!(get_size_for_type(HuntingType::Null), 0);
+    }
+
+    // ── value_matches ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_value_matches_byte_equal() {
+        assert!(value_matches(HuntingType::Byte, 0xAB, 0xAB));
+    }
+
+    #[test]
+    fn test_value_matches_byte_not_equal() {
+        assert!(!value_matches(HuntingType::Byte, 0xAB, 0xAC));
+    }
+
+    #[test]
+    fn test_value_matches_byte_only_low_eight_bits_compared() {
+        // 0x1AB and 0xAB share the same low byte; should match
+        assert!(value_matches(HuntingType::Byte, 0x1AB, 0xAB));
+    }
+
+    #[test]
+    fn test_value_matches_char_positive_match() {
+        assert!(value_matches(HuntingType::Char, 65, 65));
+    }
+
+    #[test]
+    fn test_value_matches_char_positive_no_match() {
+        assert!(!value_matches(HuntingType::Char, 65, 66));
+    }
+
+    #[test]
+    fn test_value_matches_char_negative_value() {
+        // -50 stored as wrapping usize; comparison is done via i8 cast on both sides
+        let neg: usize = (-50i8 as u8) as usize;
+        assert!(value_matches(HuntingType::Char, neg, neg));
+        assert!(!value_matches(HuntingType::Char, neg, 50));
+    }
+
+    #[test]
+    fn test_value_matches_short_match_and_no_match() {
+        assert!(value_matches(HuntingType::Short, 1000, 1000));
+        assert!(!value_matches(HuntingType::Short, 1000, 1001));
+    }
+
+    #[test]
+    fn test_value_matches_short_negative() {
+        let neg: usize = (-100i16 as u16) as usize;
+        assert!(value_matches(HuntingType::Short, neg, neg));
+        assert!(!value_matches(HuntingType::Short, neg, 100));
+    }
+
+    #[test]
+    fn test_value_matches_int_match_and_no_match() {
+        assert!(value_matches(HuntingType::Int, 123456, 123456));
+        assert!(!value_matches(HuntingType::Int, 123456, 123457));
+    }
+
+    #[test]
+    fn test_value_matches_int_negative() {
+        let neg: usize = (-1000i32 as u32) as usize;
+        assert!(value_matches(HuntingType::Int, neg, neg));
+        assert!(!value_matches(HuntingType::Int, neg, 1000));
+    }
+
+    #[test]
+    fn test_value_matches_long_long_int() {
+        assert!(value_matches(HuntingType::LongLongInt, 0xDEAD_BEEF, 0xDEAD_BEEF));
+        assert!(!value_matches(HuntingType::LongLongInt, 1, 2));
+    }
+
+    #[test]
+    fn test_value_matches_pointer() {
+        let p: usize = 0x0000_7FFF_CAFE_0000;
+        assert!(value_matches(HuntingType::Pointer, p, p));
+        assert!(!value_matches(HuntingType::Pointer, p, p + 1));
+    }
+
+    #[test]
+    fn test_value_matches_float() {
+        let f: f32 = 3.14;
+        let bits = f.to_bits() as usize;
+        assert!(value_matches(HuntingType::Float, bits, bits));
+        assert!(!value_matches(HuntingType::Float, bits, bits + 1));
+    }
+
+    #[test]
+    fn test_value_matches_double() {
+        let f: f64 = 2.71828;
+        let bits = f.to_bits() as usize;
+        assert!(value_matches(HuntingType::Double, bits, bits));
+        assert!(!value_matches(HuntingType::Double, bits, bits + 1));
+    }
+
+    #[test]
+    fn test_value_matches_null_always_false() {
+        assert!(!value_matches(HuntingType::Null, 0, 0));
+        assert!(!value_matches(HuntingType::Null, 42, 42));
+    }
+
+    // ── insert_match ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_insert_match_into_empty_list() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].address as usize, 0x1000);
+    }
+
+    #[test]
+    fn test_insert_match_maintains_sorted_order() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x3000, HuntingType::Int), &mut matches);
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        insert_match(make_test_match(0x2000, HuntingType::Int), &mut matches);
+        assert_eq!(matches.len(), 3);
+        assert_eq!(matches[0].address as usize, 0x1000);
+        assert_eq!(matches[1].address as usize, 0x2000);
+        assert_eq!(matches[2].address as usize, 0x3000);
+    }
+
+    #[test]
+    fn test_insert_match_new_head_inserted_correctly() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x2000, HuntingType::Int), &mut matches);
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        assert_eq!(matches[0].address as usize, 0x1000);
+        assert_eq!(matches[1].address as usize, 0x2000);
+    }
+
+    #[test]
+    fn test_insert_match_new_tail_appended_correctly() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        insert_match(make_test_match(0x2000, HuntingType::Int), &mut matches);
+        assert_eq!(matches[0].address as usize, 0x1000);
+        assert_eq!(matches[1].address as usize, 0x2000);
+    }
+
+    // ── remove_match ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_remove_match_single_element_leaves_empty_list() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        let ptr = matches[0].as_ref() as *const Match;
+        remove_match(ptr, &mut matches);
+        assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn test_remove_match_from_middle() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        insert_match(make_test_match(0x2000, HuntingType::Int), &mut matches);
+        insert_match(make_test_match(0x3000, HuntingType::Int), &mut matches);
+        let ptr = matches[1].as_ref() as *const Match;
+        remove_match(ptr, &mut matches);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].address as usize, 0x1000);
+        assert_eq!(matches[1].address as usize, 0x3000);
+    }
+
+    #[test]
+    fn test_remove_match_head() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        insert_match(make_test_match(0x2000, HuntingType::Int), &mut matches);
+        let ptr = matches[0].as_ref() as *const Match;
+        remove_match(ptr, &mut matches);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].address as usize, 0x2000);
+    }
+
+    #[test]
+    fn test_remove_match_not_present_is_noop() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        let unrelated = make_test_match(0x9999, HuntingType::Int);
+        let ptr = unrelated.as_ref() as *const Match;
+        remove_match(ptr, &mut matches); // must be a no-op
+        assert_eq!(matches.len(), 1);
+    }
+
+    // ── count_matches ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_count_matches_empty_list() {
+        let matches: Vec<Box<Match>> = Vec::new();
+        assert_eq!(count_matches(&matches), 0);
+    }
+
+    #[test]
+    fn test_count_matches_five_elements() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        for i in 0..5usize {
+            insert_match(
+                make_test_match(i * 0x1000 + 0x1000, HuntingType::Int),
+                &mut matches,
+            );
+        }
+        assert_eq!(count_matches(&matches), 5);
+    }
+
+    // ── get_match_by_print_order ──────────────────────────────────────────────
+
+    #[test]
+    fn test_get_match_by_print_order_first_element() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        insert_match(make_test_match(0x2000, HuntingType::Int), &mut matches);
+        let m = get_match_by_print_order(&matches, 1).unwrap();
+        assert_eq!(m.address as usize, 0x1000);
+    }
+
+    #[test]
+    fn test_get_match_by_print_order_last_element() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        insert_match(make_test_match(0x2000, HuntingType::Int), &mut matches);
+        let m = get_match_by_print_order(&matches, 2).unwrap();
+        assert_eq!(m.address as usize, 0x2000);
+    }
+
+    #[test]
+    fn test_get_match_by_print_order_zero_returns_none() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        assert!(get_match_by_print_order(&matches, 0).is_none());
+    }
+
+    #[test]
+    fn test_get_match_by_print_order_out_of_range_returns_none() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        assert!(get_match_by_print_order(&matches, 2).is_none());
+    }
+
+    #[test]
+    fn test_get_match_by_print_order_empty_list_returns_none() {
+        let matches: Vec<Box<Match>> = Vec::new();
+        assert!(get_match_by_print_order(&matches, 1).is_none());
+    }
+
+    #[test]
+    fn test_get_match_by_print_order_mut_returns_mutable_reference() {
+        let mut matches: Vec<Box<Match>> = Vec::new();
+        insert_match(make_test_match(0x1000, HuntingType::Int), &mut matches);
+        insert_match(make_test_match(0x2000, HuntingType::Short), &mut matches);
+        {
+            let m = get_match_by_print_order_mut(&mut matches, 2).unwrap();
+            m.data_type = HuntingType::Byte; // mutate through returned ref
+        }
+        assert_eq!(matches[1].data_type, HuntingType::Byte);
+    }
+
+    // ── filter_addresses — buffer-scan path (no Windows API calls) ────────────
+    //
+    // Each test constructs a synthetic MemBlock backed by a Vec<u8>, plants a
+    // known value at a specific offset, and verifies that filter_addresses finds
+    // it at the expected remote address.  MEM_PRIVATE type prevents any call to
+    // GetModuleFileNameExW.  Test values are placed well away from buffer
+    // boundaries to avoid the intentional C++-inherited off-by-one in the scan
+    // loop (which reads one byte past the buffer end).
+
+    #[test]
+    fn test_filter_addresses_scan_int_found_at_correct_address() {
+        let mut buf = vec![0u8; 64];
+        let val: i32 = 1337;
+        buf[8..12].copy_from_slice(&val.to_le_bytes());
+        let base: usize = 0x0040_0000;
+        let scan_data = vec![make_test_memblock(1, base, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(Some(&scan_data), 1337, HuntingType::Int, 1, &mut matches);
+
+        assert!(
+            matches.iter().any(|m| m.address as usize == base + 8),
+            "expected match at base + 8"
+        );
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_int_not_found() {
+        let buf = vec![0u8; 64];
+        let scan_data = vec![make_test_memblock(1, 0x0040_0000, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(Some(&scan_data), 1337, HuntingType::Int, 1, &mut matches);
+
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_byte_found() {
+        let mut buf = vec![0u8; 32];
+        buf[5] = 0xAB;
+        let base: usize = 0x0040_0000;
+        let scan_data = vec![make_test_memblock(1, base, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(Some(&scan_data), 0xAB, HuntingType::Byte, 1, &mut matches);
+
+        assert!(matches.iter().any(|m| m.address as usize == base + 5));
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_char_found() {
+        let mut buf = vec![0u8; 32];
+        let c: i8 = 65; // 'A'
+        buf[6] = c as u8;
+        let base: usize = 0x0040_0000;
+        let scan_data = vec![make_test_memblock(1, base, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(Some(&scan_data), c as usize, HuntingType::Char, 1, &mut matches);
+
+        assert!(matches.iter().any(|m| m.address as usize == base + 6));
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_short_found() {
+        let mut buf = vec![0u8; 32];
+        let val: i16 = -100;
+        buf[4..6].copy_from_slice(&val.to_le_bytes());
+        let base: usize = 0x0040_0000;
+        let scan_data = vec![make_test_memblock(1, base, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(Some(&scan_data), val as usize, HuntingType::Short, 1, &mut matches);
+
+        assert!(matches.iter().any(|m| m.address as usize == base + 4));
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_long_long_found() {
+        let mut buf = vec![0u8; 64];
+        let val: i64 = 0x1234_5678_9ABC_DEF0_u64 as i64;
+        buf[16..24].copy_from_slice(&val.to_le_bytes());
+        let base: usize = 0x0040_0000;
+        let scan_data = vec![make_test_memblock(1, base, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(Some(&scan_data), val as usize, HuntingType::LongLongInt, 1, &mut matches);
+
+        assert!(matches.iter().any(|m| m.address as usize == base + 16));
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_pointer_found() {
+        let mut buf = vec![0u8; 64];
+        let ptr_val: usize = 0x0000_7FFF_1234_5678;
+        buf[8..16].copy_from_slice(&ptr_val.to_le_bytes());
+        let base: usize = 0x0040_0000;
+        let scan_data = vec![make_test_memblock(1, base, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(Some(&scan_data), ptr_val, HuntingType::Pointer, 1, &mut matches);
+
+        assert!(matches.iter().any(|m| m.address as usize == base + 8));
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_float_found() {
+        let mut buf = vec![0u8; 32];
+        let f: f32 = 1337.0;
+        buf[8..12].copy_from_slice(&f.to_bits().to_le_bytes());
+        let base: usize = 0x0040_0000;
+        let scan_data = vec![make_test_memblock(1, base, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(
+            Some(&scan_data),
+            f.to_bits() as usize,
+            HuntingType::Float,
+            1,
+            &mut matches,
+        );
+
+        assert!(matches.iter().any(|m| m.address as usize == base + 8));
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_double_found() {
+        let mut buf = vec![0u8; 64];
+        let f: f64 = 3.14159265358979;
+        buf[16..24].copy_from_slice(&f.to_bits().to_le_bytes());
+        let base: usize = 0x0040_0000;
+        let scan_data = vec![make_test_memblock(1, base, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(
+            Some(&scan_data),
+            f.to_bits() as usize,
+            HuntingType::Double,
+            1,
+            &mut matches,
+        );
+
+        assert!(matches.iter().any(|m| m.address as usize == base + 16));
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_multiple_occurrences_all_found() {
+        let mut buf = vec![0u8; 64];
+        let val: i32 = 42;
+        buf[4..8].copy_from_slice(&val.to_le_bytes());
+        buf[32..36].copy_from_slice(&val.to_le_bytes());
+        let base: usize = 0x0040_0000;
+        let scan_data = vec![make_test_memblock(1, base, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(Some(&scan_data), 42, HuntingType::Int, 1, &mut matches);
+
+        assert!(
+            matches.iter().any(|m| m.address as usize == base + 4),
+            "expected match at offset 4"
+        );
+        assert!(
+            matches.iter().any(|m| m.address as usize == base + 32),
+            "expected match at offset 32"
+        );
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_records_correct_data_type() {
+        let mut buf = vec![0u8; 32];
+        buf[4..8].copy_from_slice(&100i32.to_le_bytes());
+        let scan_data = vec![make_test_memblock(1, 0x1000, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(Some(&scan_data), 100, HuntingType::Int, 1, &mut matches);
+
+        let m = matches.iter().find(|m| m.address as usize == 0x1004).unwrap();
+        assert_eq!(m.data_type, HuntingType::Int);
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_records_correct_memblock_id() {
+        let mut buf = vec![0u8; 32];
+        buf[4..8].copy_from_slice(&99i32.to_le_bytes());
+        let scan_data = vec![make_test_memblock(42, 0x1000, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(Some(&scan_data), 99, HuntingType::Int, 1, &mut matches);
+
+        let m = matches.iter().find(|m| m.address as usize == 0x1004).unwrap();
+        assert_eq!(m.memblock_id, 42);
+    }
+
+    #[test]
+    fn test_filter_addresses_scan_point_to_type_initialised_to_null() {
+        let mut buf = vec![0u8; 32];
+        buf[4..8].copy_from_slice(&7i32.to_le_bytes());
+        let scan_data = vec![make_test_memblock(1, 0x1000, buf)];
+        let mut matches: Vec<Box<Match>> = Vec::new();
+
+        filter_addresses(Some(&scan_data), 7, HuntingType::Int, 1, &mut matches);
+
+        let m = matches.iter().find(|m| m.address as usize == 0x1004).unwrap();
+        assert_eq!(m.point_to_type, HuntingType::Null);
+    }
+}
